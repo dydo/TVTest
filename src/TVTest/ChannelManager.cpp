@@ -49,9 +49,9 @@ bool CChannelManager::LoadChannelList(LPCTSTR pszFileName)
 	if (IsStringEmpty(pszFileName))
 		return false;
 
-	if (::PathMatchSpec(pszFileName,TEXT("*.ch2"))
-#ifdef TVH264
-		|| ::PathMatchSpec(pszFileName,TEXT("*.ch1"))
+	if (::PathMatchSpec(pszFileName,TEXT("*") CHANNEL_FILE_EXTENSION)
+#ifdef DEFERRED_CHANNEL_FILE_EXTENSION
+		|| ::PathMatchSpec(pszFileName,TEXT("*") DEFERRED_CHANNEL_FILE_EXTENSION)
 #endif
 		) {
 		if (!m_TuningSpaceList.LoadFromFile(pszFileName))

@@ -175,6 +175,7 @@ public:
 
 	const bool StorePacket(const CPesPacket *pPacket);
 	const bool StoreEs(const BYTE *pData, const DWORD dwSize);
+	bool StoreEs(const BYTE *pData, DWORD *pSize, CAdtsFrame **ppFrame);
 	void Reset(void);
 
 protected:

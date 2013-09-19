@@ -1198,6 +1198,7 @@ CProgramGuide::CProgramGuide(CEventSearchOptions &EventSearchOptions)
 	, m_TextLeftMargin(CEpgIcons::ICON_WIDTH+
 					   PROGRAM_GUIDE_ICON_MARGIN_LEFT+PROGRAM_GUIDE_ICON_MARGIN_RIGHT)
 	, m_fDragScroll(false)
+	, m_fScrolling(false)
 	, m_hDragCursor1(NULL)
 	, m_hDragCursor2(NULL)
 	, m_VisibleEventIcons(((1<<(CEpgIcons::ICON_LAST+1))-1)^CEpgIcons::IconFlag(CEpgIcons::ICON_PAY))
@@ -1205,6 +1206,7 @@ CProgramGuide::CProgramGuide(CEventSearchOptions &EventSearchOptions)
 	, m_EventInfoPopupManager(&m_EventInfoPopup)
 	, m_EventInfoPopupHandler(this)
 	, m_fShowToolTip(true)
+	, m_fKeepTimePos(false)
 	, m_pChannelProviderManager(NULL)
 	, m_pChannelProvider(NULL)
 	, m_CurrentChannelProvider(-1)
@@ -1446,6 +1448,21 @@ bool CProgramGuide::UpdateService(ProgramGuide::CServiceInfo *pService,bool fUpd
 	}
 	pService->SortEvents();
 	return true;
+}
+
+
+void CProgramGuide::UpdateServiceList()
+{
+	if (m_ListMode!=LIST_SERVICES) {
+		m_ListMode=LIST_SERVICES;
+		m_WeekListService=-1;
+		if (m_pFrame!=NULL)
+			m_pFrame->OnListModeChanged();
+	}
+
+	UpdateProgramGuide();
+
+	RestoreTimePos();
 }
 
 
@@ -2309,6 +2326,43 @@ void CProgramGuide::SetScrollBar()
 }
 
 
+int CProgramGuide::GetTimePos() const
+{
+	SYSTEMTIME stBegin;
+
+	GetCurrentTimeRange(&stBegin,NULL);
+	return stBegin.wHour*m_LinesPerHour+m_ScrollPos.y;
+}
+
+
+bool CProgramGuide::SetTimePos(int Pos)
+{
+	SYSTEMTIME stBegin,stEnd,st;
+
+	GetCurrentTimeRange(&stBegin,&stEnd);
+	st=stBegin;
+	OffsetSystemTime(&st,(LONGLONG)(Pos*60/m_LinesPerHour-stBegin.wHour*60)*60*1000);
+	if (CompareSystemTime(&st,&stBegin)<0)
+		OffsetSystemTime(&st,24*60*60*1000);
+	else if (CompareSystemTime(&st,&stEnd)>=0)
+		OffsetSystemTime(&st,-24*60*60*1000);
+	return ScrollToTime(st);
+}
+
+
+void CProgramGuide::StoreTimePos()
+{
+	m_CurTimePos=GetTimePos();
+}
+
+
+void CProgramGuide::RestoreTimePos()
+{
+	if (m_fKeepTimePos)
+		SetTimePos(m_CurTimePos);
+}
+
+
 void CProgramGuide::SetCaption()
 {
 	if (m_hwnd!=NULL && m_pFrame!=NULL) {
@@ -2613,6 +2667,8 @@ bool CProgramGuide::SetExcludeService(WORD NetworkID,WORD TransportStreamID,WORD
 bool CProgramGuide::SetServiceListMode()
 {
 	if (m_ListMode!=LIST_SERVICES) {
+		StoreTimePos();
+
 		m_ListMode=LIST_SERVICES;
 		m_WeekListService=-1;
 
@@ -2624,11 +2680,14 @@ bool CProgramGuide::SetServiceListMode()
 		SetCaption();
 		Invalidate();
 
+		RestoreTimePos();
+
 		if (m_pFrame!=NULL)
 			m_pFrame->OnListModeChanged();
 
 		::SetCursor(hcurOld);
 	}
+
 	return true;
 }
 
@@ -2639,7 +2698,10 @@ bool CProgramGuide::SetWeekListMode(int Service)
 
 	if (pServiceInfo==NULL)
 		return false;
+
 	if (m_ListMode!=LIST_WEEK || m_WeekListService!=Service) {
+		StoreTimePos();
+
 		m_ListMode=LIST_WEEK;
 		m_WeekListService=Service;
 
@@ -2654,11 +2716,14 @@ bool CProgramGuide::SetWeekListMode(int Service)
 		SetCaption();
 		Invalidate();
 
+		RestoreTimePos();
+
 		if (m_pFrame!=NULL)
 			m_pFrame->OnListModeChanged();
 
 		::SetCursor(hcurOld);
 	}
+
 	return true;
 }
 
@@ -2751,7 +2816,7 @@ bool CProgramGuide::GetDayTimeRange(int Day,SYSTEMTIME *pFirstTime,SYSTEMTIME *p
 }
 
 
-bool CProgramGuide::ScrollToTime(const SYSTEMTIME &Time)
+bool CProgramGuide::ScrollToTime(const SYSTEMTIME &Time,bool fHour)
 {
 	SYSTEMTIME stFirst,stLast;
 	if (!GetCurrentTimeRange(&stFirst,&stLast))
@@ -2770,9 +2835,13 @@ bool CProgramGuide::ScrollToTime(const SYSTEMTIME &Time)
 			OffsetSystemTime(&st,24LL*60*60*1000);
 	}
 
+	LONGLONG Diff=DiffSystemTime(&stFirst,&st);
 	POINT Pos;
 	Pos.x=m_ScrollPos.x;
-	Pos.y=(int)(DiffSystemTime(&stFirst,&st)/(60*60*1000))*m_LinesPerHour;
+	if (fHour)
+		Pos.y=(int)(Diff/(60*60*1000))*m_LinesPerHour;
+	else
+		Pos.y=(int)(Diff/(60*1000)*m_LinesPerHour/60);
 	SetScrollPos(Pos);
 
 	return true;
@@ -2781,7 +2850,7 @@ bool CProgramGuide::ScrollToTime(const SYSTEMTIME &Time)
 
 bool CProgramGuide::ScrollToCurrentTime()
 {
-	return ScrollToTime(m_stCurTime);
+	return ScrollToTime(m_stCurTime,true);
 }
 
 
@@ -2791,9 +2860,13 @@ bool CProgramGuide::SetViewDay(int Day)
 		return false;
 
 	if (m_Day!=Day || m_ListMode!=LIST_SERVICES) {
+		StoreTimePos();
+
 		m_Day=Day;
+
 		if (m_pProgramList!=NULL) {
 			HCURSOR hcurOld=::SetCursor(::LoadCursor(NULL,IDC_WAIT));
+
 			if (m_ListMode!=LIST_SERVICES) {
 				m_ListMode=LIST_SERVICES;
 				m_WeekListService=-1;
@@ -2807,7 +2880,11 @@ bool CProgramGuide::SetViewDay(int Day)
 			SetCaption();
 			GetCurrentJST(&m_stCurTime);
 			Invalidate();
+
+			RestoreTimePos();
+
 			::SetCursor(hcurOld);
+
 			if (m_pFrame!=NULL)
 				m_pFrame->OnDateChanged();
 		}
@@ -2882,6 +2959,35 @@ bool CProgramGuide::JumpEvent(WORD NetworkID,WORD TSID,WORD ServiceID,WORD Event
 bool CProgramGuide::JumpEvent(const CEventInfoData &EventInfo)
 {
 	return JumpEvent(EventInfo.m_NetworkID,EventInfo.m_TSID,EventInfo.m_ServiceID,EventInfo.m_EventID);
+}
+
+
+bool CProgramGuide::ScrollToCurrentService()
+{
+	if (m_ListMode!=LIST_SERVICES)
+		return false;
+	if (m_CurrentChannel.ServiceID==0)
+		return false;
+
+	const int ServiceIndex=m_ServiceList.FindItemByIDs(
+		m_CurrentChannel.TransportStreamID,m_CurrentChannel.ServiceID);
+	if (ServiceIndex<0)
+		return false;
+
+	SIZE Size,Page;
+	GetProgramGuideSize(&Size);
+	GetPageSize(&Page);
+	const int ItemWidth=m_ItemWidth+m_ItemMargin*2;
+	POINT Pos;
+	Pos.x=ItemWidth*ServiceIndex-(Page.cx-ItemWidth)/2;
+	if (Pos.x<0)
+		Pos.x=0;
+	else if (Pos.x>max(Size.cx-Page.cx,0))
+		Pos.x=max(Size.cx-Page.cx,0);
+	Pos.y=m_ScrollPos.y;
+	SetScrollPos(Pos);
+
+	return true;
 }
 
 
@@ -3058,6 +3164,12 @@ void CProgramGuide::SetVisibleEventIcons(UINT VisibleIcons)
 		if (m_hwnd!=NULL)
 			Invalidate();
 	}
+}
+
+
+void CProgramGuide::SetKeepTimePos(bool fKeep)
+{
+	m_fKeepTimePos=fKeep;
 }
 
 
@@ -3497,10 +3609,12 @@ LRESULT CProgramGuide::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam
 					}
 				}
 			} else if (m_fDragScroll) {
+				m_fScrolling=true;
 				m_DragInfo.StartCursorPos=pt;
 				m_DragInfo.StartScrollPos=m_ScrollPos;
 				::SetCursor(m_hDragCursor2);
 				::SetCapture(hwnd);
+				m_EventInfoPopupManager.SetEnable(false);
 			} else {
 				SelectEventByPosition(pt.x,pt.y);
 				m_EventInfoPopupManager.Popup(pt.x,pt.y);
@@ -3509,9 +3623,8 @@ LRESULT CProgramGuide::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam
 		return 0;
 
 	case WM_LBUTTONUP:
-		if (::GetCapture()==hwnd) {
+		if (m_fScrolling) {
 			::ReleaseCapture();
-			::SetCursor(m_hDragCursor1);
 		}
 		return 0;
 
@@ -3547,7 +3660,7 @@ LRESULT CProgramGuide::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam
 		return 0;
 
 	case WM_MOUSEMOVE:
-		if (::GetCapture()==hwnd) {
+		if (m_fScrolling) {
 			int x=GET_X_LPARAM(lParam),y=GET_Y_LPARAM(lParam);
 			int XScroll,YScroll;
 
@@ -3605,6 +3718,14 @@ LRESULT CProgramGuide::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam
 			}
 		}
 		break;
+
+	case WM_CAPTURECHANGED:
+		if (m_fScrolling) {
+			m_fScrolling=false;
+			::SetCursor(m_hDragCursor1);
+			m_EventInfoPopupManager.SetEnable(m_fShowToolTip);
+		}
+		return 0;
 
 	case WM_KEYDOWN:
 		{
@@ -3770,6 +3891,10 @@ void CProgramGuide::OnCommand(int id)
 		SetShowToolTip(!m_fShowToolTip);
 		return;
 
+	case CM_PROGRAMGUIDE_KEEPTIMEPOS:
+		SetKeepTimePos(!m_fKeepTimePos);
+		return;
+
 	case CM_PROGRAMGUIDE_ADDTOFAVORITES:
 		if (m_pChannelProvider!=NULL
 				&& m_CurrentChannelGroup>=0) {
@@ -3831,14 +3956,9 @@ void CProgramGuide::OnCommand(int id)
 				&& id<=CM_PROGRAMGUIDE_CHANNELGROUP_LAST) {
 			if (m_fEpgUpdating)
 				OnCommand(CM_PROGRAMGUIDE_ENDUPDATE);
-			SetCurrentChannelGroup(id-CM_PROGRAMGUIDE_CHANNELGROUP_FIRST);
-			if (m_ListMode!=LIST_SERVICES) {
-				m_ListMode=LIST_SERVICES;
-				m_WeekListService=-1;
-				if (m_pFrame!=NULL)
-					m_pFrame->OnListModeChanged();
-			}
-			UpdateProgramGuide();
+			StoreTimePos();
+			if (SetCurrentChannelGroup(id-CM_PROGRAMGUIDE_CHANNELGROUP_FIRST))
+				UpdateServiceList();
 			return;
 		}
 
@@ -3849,15 +3969,9 @@ void CProgramGuide::OnCommand(int id)
 			if (m_pChannelProviderManager!=NULL) {
 				const int Provider=id-CM_PROGRAMGUIDE_CHANNELPROVIDER_FIRST;
 
-				if (SetCurrentChannelProvider(Provider,0)) {
-					if (m_ListMode!=LIST_SERVICES) {
-						m_ListMode=LIST_SERVICES;
-						m_WeekListService=-1;
-						if (m_pFrame!=NULL)
-							m_pFrame->OnListModeChanged();
-					}
-					UpdateProgramGuide();
-				}
+				StoreTimePos();
+				if (SetCurrentChannelProvider(Provider,0))
+					UpdateServiceList();
 			}
 			return;
 		}
@@ -3906,15 +4020,9 @@ void CProgramGuide::OnCommand(int id)
 
 				for (int i=0;EnumChannelProvider(i,szName,lengthof(szName));i++) {
 					if (::lstrcmpi(szName,pInfo->Name.c_str())==0) {
-						if (SetCurrentChannelProvider(i,pInfo->Group)) {
-							if (m_ListMode!=LIST_SERVICES) {
-								m_ListMode=LIST_SERVICES;
-								m_WeekListService=-1;
-								if (m_pFrame!=NULL)
-									m_pFrame->OnListModeChanged();
-							}
-							UpdateProgramGuide();
-						}
+						StoreTimePos();
+						if (SetCurrentChannelProvider(i,pInfo->Group))
+							UpdateServiceList();
 						return;
 					}
 				}
@@ -4016,7 +4124,9 @@ void CProgramGuide::ShowPopupMenu(int x,int y)
 	::CheckMenuItem(hmenu,CM_PROGRAMGUIDE_SEARCH,
 		MF_BYCOMMAND | (m_ProgramSearch.IsCreated()?MF_CHECKED:MF_UNCHECKED));
 	::EnableMenuItem(hmenu,CM_PROGRAMGUIDE_CHANNELSETTINGS,
-		MF_BYCOMMAND | (m_ServiceList.NumServices()>0?MF_ENABLED:MF_GRAYED));
+		MF_BYCOMMAND |
+			(m_pChannelProvider!=NULL &&
+			m_pChannelProvider->GetChannelCount(m_CurrentChannelGroup)>0?MF_ENABLED:MF_GRAYED));
 	::EnableMenuItem(hmenu,CM_PROGRAMGUIDE_UPDATE,
 		MF_BYCOMMAND |
 			(!m_fEpgUpdating
@@ -4030,6 +4140,8 @@ void CProgramGuide::ShowPopupMenu(int x,int y)
 		MF_BYCOMMAND | (m_fDragScroll?MF_CHECKED:MF_UNCHECKED));
 	::CheckMenuItem(hmenu,CM_PROGRAMGUIDE_POPUPEVENTINFO,
 		MF_BYCOMMAND | (m_fShowToolTip?MF_CHECKED:MF_UNCHECKED));
+	::CheckMenuItem(hmenu,CM_PROGRAMGUIDE_KEEPTIMEPOS,
+		MF_BYCOMMAND | (m_fKeepTimePos?MF_CHECKED:MF_UNCHECKED));
 	::EnableMenuItem(hmenu,CM_PROGRAMGUIDE_IEPGASSOCIATE,
 		MF_BYCOMMAND | (m_CurEventItem.fSelected?MF_ENABLED:MF_GRAYED));
 	::EnableMenuItem(hmenu,CM_PROGRAMGUIDE_ADDTOFAVORITES,
@@ -4313,7 +4425,18 @@ bool CProgramGuide::CProgramSearchEventHandler::OnClose()
 }
 
 
-bool CProgramGuide::CProgramSearchEventHandler::OnRButtonClick(const CEventInfoData *pEventInfo,LPARAM Param)
+bool CProgramGuide::CProgramSearchEventHandler::OnLDoubleClick(
+	const CEventInfoData *pEventInfo,LPARAM Param)
+{
+	// 検索結果の一覧のダブルクリック
+	// TODO: 動作をカスタマイズできるようにする
+	DoCommand(CM_PROGRAMGUIDE_JUMPEVENT,pEventInfo);
+	return true;
+}
+
+
+bool CProgramGuide::CProgramSearchEventHandler::OnRButtonClick(
+	const CEventInfoData *pEventInfo,LPARAM Param)
 {
 	// 検索結果の一覧の右クリックメニューを表示
 	HMENU hmenu=::LoadMenu(GetAppClass().GetResourceInstance(),MAKEINTRESOURCE(IDM_PROGRAMSEARCH));
@@ -4335,24 +4458,7 @@ bool CProgramGuide::CProgramSearchEventHandler::OnRButtonClick(const CEventInfoD
 	::DestroyMenu(hmenu);
 
 	if (Command>0) {
-		ProgramGuide::CServiceInfo *pServiceInfo=
-			m_pProgramGuide->m_ServiceList.GetItemByIDs(pEventInfo->m_TSID,pEventInfo->m_ServiceID);
-
-		if (Command==CM_PROGRAMGUIDE_JUMPEVENT) {
-			m_pProgramGuide->JumpEvent(*pEventInfo);
-		} else if (Command==CM_PROGRAMGUIDE_IEPGASSOCIATE) {
-			if (pServiceInfo!=NULL)
-				m_pProgramGuide->ExecuteiEpgAssociate(pServiceInfo,pEventInfo);
-		} else if (Command>=CM_PROGRAMGUIDE_CUSTOM_FIRST
-				&& Command<=CM_PROGRAMGUIDE_CUSTOM_LAST) {
-			if (m_pProgramGuide->m_pProgramCustomizer!=NULL)
-				m_pProgramGuide->m_pProgramCustomizer->ProcessMenu(*pEventInfo,Command);
-		} else if (Command>=CM_PROGRAMGUIDETOOL_FIRST
-				&& Command<=CM_PROGRAMGUIDETOOL_LAST) {
-			if (pServiceInfo!=NULL)
-				m_pProgramGuide->ExecuteTool(Command-CM_PROGRAMGUIDETOOL_FIRST,
-											 pServiceInfo,pEventInfo);
-		}
+		DoCommand(Command,pEventInfo);
 	}
 
 	return true;
@@ -4362,6 +4468,30 @@ bool CProgramGuide::CProgramSearchEventHandler::OnRButtonClick(const CEventInfoD
 void CProgramGuide::CProgramSearchEventHandler::OnHighlightChange(bool fHighlight)
 {
 	m_pProgramGuide->Invalidate();
+}
+
+
+void CProgramGuide::CProgramSearchEventHandler::DoCommand(
+	int Command,const CEventInfoData *pEventInfo)
+{
+	ProgramGuide::CServiceInfo *pServiceInfo=
+		m_pProgramGuide->m_ServiceList.GetItemByIDs(pEventInfo->m_TSID,pEventInfo->m_ServiceID);
+
+	if (Command==CM_PROGRAMGUIDE_JUMPEVENT) {
+		m_pProgramGuide->JumpEvent(*pEventInfo);
+	} else if (Command==CM_PROGRAMGUIDE_IEPGASSOCIATE) {
+		if (pServiceInfo!=NULL)
+			m_pProgramGuide->ExecuteiEpgAssociate(pServiceInfo,pEventInfo);
+	} else if (Command>=CM_PROGRAMGUIDE_CUSTOM_FIRST
+			&& Command<=CM_PROGRAMGUIDE_CUSTOM_LAST) {
+		if (m_pProgramGuide->m_pProgramCustomizer!=NULL)
+			m_pProgramGuide->m_pProgramCustomizer->ProcessMenu(*pEventInfo,Command);
+	} else if (Command>=CM_PROGRAMGUIDETOOL_FIRST
+			&& Command<=CM_PROGRAMGUIDETOOL_LAST) {
+		if (pServiceInfo!=NULL)
+			m_pProgramGuide->ExecuteTool(Command-CM_PROGRAMGUIDETOOL_FIRST,
+										 pServiceInfo,pEventInfo);
+	}
 }
 
 
@@ -5886,6 +6016,15 @@ bool CProgramGuideFrame::SetAlwaysOnTop(bool fTop)
 		if (m_hwnd!=NULL)
 			::SetWindowPos(m_hwnd,fTop?HWND_TOPMOST:HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE | SWP_NOSIZE);
 	}
+	return true;
+}
+
+
+bool CProgramGuideFrame::Show()
+{
+	if (m_hwnd==NULL)
+		return false;
+	::ShowWindow(m_hwnd,m_WindowPosition.fMaximized?SW_SHOWMAXIMIZED:SW_SHOWNORMAL);
 	return true;
 }
 

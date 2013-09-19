@@ -338,7 +338,7 @@ LRESULT CPanel::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam)
 
 				::AppendMenu(hmenu,MFT_STRING | MFS_ENABLED,1,TEXT("閉じる(&C)"));
 				if (m_fEnableFloating)
-					::AppendMenu(hmenu,MFT_STRING | MFS_ENABLED,2,TEXT("フローティング(&F)"));
+					::AppendMenu(hmenu,MFT_STRING | MFS_ENABLED,2,TEXT("切り離す(&F)"));
 				m_pEventHandler->OnMenuPopup(hmenu);
 				::ClientToScreen(hwnd,&pt);
 				int Command=::TrackPopupMenu(hmenu,
@@ -402,6 +402,7 @@ bool CPanelFrame::Initialize(HINSTANCE hinst)
 CPanelFrame::CPanelFrame()
 	: m_fFloating(true)
 	, m_DockingWidth(-1)
+	, m_fKeepWidth(true)
 	, m_Opacity(255)
 	, m_DragDockingTarget(DOCKING_NONE)
 	, m_pEventHandler(NULL)
@@ -475,10 +476,9 @@ bool CPanelFrame::SetFloating(bool fFloating)
 		if (m_hwnd!=NULL) {
 			Layout::CWindowContainer *pContainer=
 				dynamic_cast<Layout::CWindowContainer*>(m_pSplitter->GetPaneByID(m_PanelID));
+			RECT rc;
 
 			if (fFloating) {
-				RECT rc;
-
 				pContainer->SetVisible(false);
 				pContainer->SetWindow(NULL);
 				m_Panel.SetParent(this);
@@ -488,6 +488,10 @@ bool CPanelFrame::SetFloating(bool fFloating)
 				m_Panel.ShowTitle(false);
 				SetVisible(true);
 			} else {
+				if (m_fKeepWidth) {
+					m_Panel.GetClientRect(&rc);
+					m_DockingWidth=rc.right;
+				}
 				SetVisible(false);
 				m_Panel.SetVisible(false);
 				m_Panel.ShowTitle(true);
@@ -522,6 +526,11 @@ bool CPanelFrame::SetPanelVisible(bool fVisible,bool fNoActivate)
 	if (m_pEventHandler!=NULL)
 		m_pEventHandler->OnVisibleChange(fVisible);
 	if (m_fFloating) {
+		if (fVisible) {
+			SendSizeMessage();
+			m_Panel.SetVisible(true);
+			m_Panel.Invalidate();
+		}
 		if (fVisible && fNoActivate)
 			::ShowWindow(m_hwnd,SW_SHOWNA);
 		else
@@ -636,13 +645,22 @@ LRESULT CPanelFrame::OnMessage(HWND hwnd,UINT uMsg,WPARAM wParam,LPARAM lParam)
 			if (Target!=m_DragDockingTarget) {
 				if (Target==DOCKING_NONE) {
 					m_DropHelper.Hide();
-				} else{
+				} else {
+					int DockingWidth;
+
+					if (m_fKeepWidth) {
+						SIZE sz;
+						m_Panel.GetClientSize(&sz);
+						DockingWidth=sz.cx;
+					} else {
+						DockingWidth=m_DockingWidth;
+					}
 					if (Target==DOCKING_LEFT) {
 						rc.right=rcTarget.left;
-						rc.left=rc.right-m_DockingWidth;
+						rc.left=rc.right-DockingWidth;
 					} else if (Target==DOCKING_RIGHT) {
 						rc.left=rcTarget.right;
-						rc.right=rc.left+m_DockingWidth;
+						rc.right=rc.left+DockingWidth;
 					}
 					m_DropHelper.Show(&rc);
 				}
@@ -750,7 +768,7 @@ void CPanelFrame::OnSizeChanged(int Width,int Height)
 bool CPanelFrame::OnMenuPopup(HMENU hmenu)
 {
 	::AppendMenu(hmenu,MF_STRING | MF_ENABLED,PANEL_MENU_PLACEMENT,
-				 m_pSplitter->IDToIndex(m_PanelID)==0?TEXT("右へ"):TEXT("左へ"));
+				 m_pSplitter->IDToIndex(m_PanelID)==0?TEXT("右へ(&R)"):TEXT("左へ(&L)"));
 	return true;
 }
 

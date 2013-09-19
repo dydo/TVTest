@@ -808,7 +808,7 @@ bool CTuningSpaceList::SaveToFile(LPCTSTR pszFileName) const
 
 	static const char szComment[]=
 		"; " APP_NAME_A " チャンネル設定ファイル\r\n"
-		"; 名称,チューニング空間,チャンネル,リモコン番号,サービスタイブ,サービスID,ネットワークID,TSID,状態\r\n";
+		"; 名称,チューニング空間,チャンネル,リモコン番号,サービスタイプ,サービスID,ネットワークID,TSID,状態\r\n";
 	if (!::WriteFile(hFile,szComment,sizeof(szComment)-1,&Write,NULL) || Write!=sizeof(szComment)-1) {
 		::CloseHandle(hFile);
 		return false;

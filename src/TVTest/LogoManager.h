@@ -27,9 +27,9 @@ public:
 	bool SaveLogoIDMap(LPCTSTR pszFileName);
 	bool LoadLogoIDMap(LPCTSTR pszFileName);
 	bool IsLogoIDMapUpdated() const { return m_fLogoIDMapUpdated; }
-	HBITMAP GetLogoBitmap(WORD OriginalNetworkID,WORD LogoID,BYTE LogoType);
+	HBITMAP GetLogoBitmap(WORD NetworkID,WORD LogoID,BYTE LogoType);
 	HBITMAP GetAssociatedLogoBitmap(WORD NetworkID,WORD ServiceID,BYTE LogoType);
-	const CGdiPlus::CImage *GetLogoImage(WORD OriginalNetworkID,WORD LogoID,BYTE LogoType);
+	const CGdiPlus::CImage *GetLogoImage(WORD NetworkID,WORD LogoID,BYTE LogoType);
 	const CGdiPlus::CImage *GetAssociatedLogoImage(WORD NetworkID,WORD ServiceID,BYTE LogoType);
 	HICON CreateLogoIcon(WORD NetworkID,WORD ServiceID,int Width,int Height);
 	bool IsLogoAvailable(WORD NetworkID,WORD ServiceID,BYTE LogoType);
@@ -43,12 +43,13 @@ public:
 private:
 	class CLogoData
 	{
-		WORD m_OriginalNetworkID;
+		WORD m_NetworkID;
 		WORD m_LogoID;
 		WORD m_LogoVersion;
 		BYTE m_LogoType;
 		WORD m_DataSize;
 		BYTE *m_pData;
+		SYSTEMTIME m_Time;
 		HBITMAP m_hbm;
 		CGdiPlus::CImage m_Image;
 
@@ -57,13 +58,14 @@ private:
 		CLogoData(const CLogoData &Src);
 		~CLogoData();
 		CLogoData &operator=(const CLogoData &Src);
-		WORD GetOriginalNetworkID() const { return m_OriginalNetworkID; }
+		WORD GetNetworkID() const { return m_NetworkID; }
 		WORD GetLogoID() const { return m_LogoID; }
 		WORD GetLogoVersion() const { return m_LogoVersion; }
 		void SetLogoVersion(WORD Version) { m_LogoVersion=Version; }
 		BYTE GetLogoType() const { return m_LogoType; }
 		WORD GetDataSize() const { return m_DataSize; }
 		const BYTE *GetData() const { return m_pData; }
+		const SYSTEMTIME &GetTime() const { return m_Time; }
 		HBITMAP GetBitmap(CImageCodec *pCodec);
 		const CGdiPlus::CImage *GetImage(CImageCodec *pCodec);
 		bool SaveToFile(LPCTSTR pszFileName) const;
@@ -95,7 +97,7 @@ private:
 	CLogoData *LoadLogoData(WORD NetworkID,WORD LogoID,BYTE LogoType);
 
 // CLogoDownloader::ILogoHandler
-	void OnLogo(const CLogoDownloader::LogoData *pData) override;
+	void OnLogoDownloaded(const CLogoDownloader::LogoData *pData) override;
 };
 
 

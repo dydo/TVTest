@@ -297,6 +297,7 @@ void CLogoDownloader::Reset()
 	m_PidMapManager.MapTarget(PID_PAT, new CPatTable, OnPatUpdated, this);
 	m_PidMapManager.MapTarget(PID_CDT, new CCdtTable(this));
 	m_PidMapManager.MapTarget(PID_SDTT, new CSdttTable(this));
+	m_PidMapManager.MapTarget(PID_TOT, new CTotTable);
 
 	m_ServiceList.clear();
 
@@ -351,8 +352,10 @@ void CLogoDownloader::OnSection(CPsiStreamTable *pTable, const CPsiSection *pSec
 				Data.DataSize = ((WORD)pData[5] << 8) | (WORD)pData[6];
 				Data.pData = &pData[7];
 				if (Data.LogoType <= 0x05
-						&& Data.DataSize <= DataSize - 7)
-					m_pLogoHandler->OnLogo(&Data);
+						&& Data.DataSize <= DataSize - 7) {
+					GetTotTime(&Data.Time);
+					m_pLogoHandler->OnLogoDownloaded(&Data);
+				}
 			}
 		}
 	} else if (TableID == CSdttTable::TABLE_ID) {
@@ -411,7 +414,9 @@ void CALLBACK CLogoDownloader::OnLogoDataModule(LogoData *pData, DWORD DownloadI
 		if (itrVersion != pThis->m_VersionMap.end())
 			pData->LogoVersion = itrVersion->second;
 
-		pThis->m_pLogoHandler->OnLogo(pData);
+		pThis->GetTotTime(&pData->Time);
+
+		pThis->m_pLogoHandler->OnLogoDownloaded(pData);
 	}
 }
 
@@ -568,5 +573,16 @@ bool CLogoDownloader::UnmapDataEs(const int Index)
 		m_PidMapManager.UnmapTarget(Info.EsList[i]);
 	}
 
+	return true;
+}
+
+
+bool CLogoDownloader::GetTotTime(SYSTEMTIME *pTime)
+{
+	const CTotTable *pTotTable = dynamic_cast<const CTotTable*>(m_PidMapManager.GetMapTarget(PID_TOT));
+	if (pTotTable == NULL || !pTotTable->GetDateTime(pTime)) {
+		::ZeroMemory(pTime,sizeof(SYSTEMTIME));
+		return false;
+	}
 	return true;
 }

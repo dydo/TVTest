@@ -308,6 +308,9 @@
     <ClCompile Include="DebugHelper.cpp" />
     <ClCompile Include="Dialog.cpp" />
     <ClCompile Include="DialogUtil.cpp" />
+    <ClCompile Include="DirectShowFilter\AudioDecFilter.cpp" />
+    <ClCompile Include="DirectShowFilter\AudioDecoder.cpp" />
+    <ClCompile Include="DirectShowFilter\VideoParser.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="DriverManager.cpp" />
     <ClCompile Include="DriverOptions.cpp" />
@@ -411,7 +414,6 @@
     <ClCompile Include="BonTsEngine\TsTable.cpp" />
     <ClCompile Include="BonTsEngine\TsUtilClass.cpp" />
     <ClCompile Include="DtvEngine\DtvEngine.cpp" />
-    <ClCompile Include="DirectShowFilter\AacDecFilter.cpp" />
     <ClCompile Include="DirectShowFilter\AacDecoder.cpp" />
     <ClCompile Include="DirectShowFilter\BonSrcFilter.cpp" />
     <ClCompile Include="DirectShowFilter\BonSrcPin.cpp" />
@@ -449,6 +451,7 @@
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="Command.h" />
     <ClInclude Include="CommandLine.h" />
+    <ClInclude Include="Common.h" />
     <ClInclude Include="Controller.h" />
     <ClInclude Include="ControlPanel.h" />
     <ClInclude Include="ControlPanelItems.h" />
@@ -456,6 +459,9 @@
     <ClInclude Include="DebugHelper.h" />
     <ClInclude Include="Dialog.h" />
     <ClInclude Include="DialogUtil.h" />
+    <ClInclude Include="DirectShowFilter\AudioDecFilter.h" />
+    <ClInclude Include="DirectShowFilter\AudioDecoder.h" />
+    <ClInclude Include="DirectShowFilter\VideoParser.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="DriverManager.h" />
     <ClInclude Include="DriverOptions.h" />
@@ -561,7 +567,6 @@
     <ClInclude Include="BonTsEngine\TsTable.h" />
     <ClInclude Include="BonTsEngine\TsUtilClass.h" />
     <ClInclude Include="DtvEngine\DtvEngine.h" />
-    <ClInclude Include="DirectShowFilter\AacDecFilter.h" />
     <ClInclude Include="DirectShowFilter\AacDecoder.h" />
     <ClInclude Include="DirectShowFilter\BonSrcFilter.h" />
     <ClInclude Include="DirectShowFilter\BonSrcPin.h" />

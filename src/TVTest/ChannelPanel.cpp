@@ -63,6 +63,7 @@ CChannelPanel::CChannelPanel()
 	, m_ExpandEvents(m_EventsPerChannel+m_ExpandAdditionalEvents)
 	, m_ScrollPos(0)
 	, m_CurChannel(-1)
+	, m_fScrollToCurChannel(false)
 	, m_pEventHandler(NULL)
 	, m_fDetailToolTip(false)
 	, m_pLogoManager(NULL)
@@ -98,10 +99,7 @@ CChannelPanel::CChannelPanel()
 CChannelPanel::~CChannelPanel()
 {
 	Destroy();
-
-	for (size_t i=0;i<m_ChannelList.size();i++)
-		delete m_ChannelList[i];
-	m_ChannelList.clear();
+	ClearChannels();
 }
 
 
@@ -124,6 +122,8 @@ bool CChannelPanel::ReadSettings(CSettings &Settings)
 			|| Settings.Read(TEXT("ChannelPanelExpandEvents"),&AdditionalEvents))
 		SetEventsPerChannel(EventsPerChannel,AdditionalEvents);
 
+	Settings.Read(TEXT("ChannelPanelScrollToCurChannel"),&m_fScrollToCurChannel);
+
 	return true;
 }
 
@@ -133,6 +133,7 @@ bool CChannelPanel::WriteSettings(CSettings &Settings)
 	Settings.Write(TEXT("ChannelPanelDetailToolTip"),m_fDetailToolTip);
 	Settings.Write(TEXT("ChannelPanelEventsPerChannel"),m_EventsPerChannel);
 	Settings.Write(TEXT("ChannelPanelExpandEvents"),m_ExpandAdditionalEvents);
+	Settings.Write(TEXT("ChannelPanelScrollToCurChannel"),m_fScrollToCurChannel);
 
 	return true;
 }
@@ -142,6 +143,14 @@ bool CChannelPanel::SetEpgProgramList(CEpgProgramList *pList)
 {
 	m_pProgramList=pList;
 	return true;
+}
+
+
+void CChannelPanel::ClearChannels()
+{
+	for (auto it=m_ChannelList.begin();it!=m_ChannelList.end();++it)
+		delete *it;
+	m_ChannelList.clear();
 }
 
 
@@ -191,12 +200,11 @@ bool CChannelPanel::UpdateEvents(CChannelEventInfo *pInfo,const SYSTEMTIME *pTim
 
 bool CChannelPanel::SetChannelList(const CChannelList *pChannelList,bool fSetEvent)
 {
-	for (size_t i=0;i<m_ChannelList.size();i++)
-		delete m_ChannelList[i];
-	m_ChannelList.clear();
+	ClearChannels();
 
 	m_ScrollPos=0;
 	m_CurChannel=-1;
+
 	if (pChannelList!=NULL) {
 		SYSTEMTIME stCurrent;
 
@@ -219,15 +227,6 @@ bool CChannelPanel::SetChannelList(const CChannelList *pChannelList,bool fSetEve
 					pEventInfo->SetLogo(hbmLogo);
 			}
 			m_ChannelList.push_back(pEventInfo);
-			/*
-			if (m_hwnd!=NULL) {
-				RECT rc;
-
-				GetItemRect(m_ChannelList.Length()-1,&rc);
-				Invalidate(&rc);
-				Update();
-			}
-			*/
 		}
 	}
 
@@ -326,10 +325,53 @@ bool CChannelPanel::SetCurrentChannel(int CurChannel)
 {
 	if (CurChannel<-1)
 		return false;
+
 	m_CurChannel=CurChannel;
-	if (m_hwnd!=NULL)
+
+	if (m_hwnd!=NULL) {
+		if (m_fScrollToCurChannel && m_CurChannel>=0)
+			ScrollToCurrentChannel();
 		Invalidate();
+	}
+
 	return true;
+}
+
+
+bool CChannelPanel::ScrollToChannel(int Channel)
+{
+	if (Channel<0 || (size_t)Channel>=m_ChannelList.size())
+		return false;
+
+	RECT rcClient,rcItem;
+	GetClientRect(&rcClient);
+	GetItemRect(Channel,&rcItem);
+	if (rcItem.top>=rcClient.top && rcItem.bottom<=rcClient.bottom)
+		return true;
+	bool fBottom=rcItem.bottom>rcClient.bottom;
+	if (m_ScrollPos!=0)
+		::OffsetRect(&rcItem,0,m_ScrollPos);
+	int Pos=rcItem.top;
+	if (fBottom) {
+		Pos-=rcClient.bottom-(rcItem.bottom-rcItem.top);
+		if (Pos>rcItem.top)
+			Pos=rcItem.top;
+	}
+	SetScrollPos(Pos);
+
+	return true;
+}
+
+
+bool CChannelPanel::ScrollToCurrentChannel()
+{
+	for (int i=0;i<(int)m_ChannelList.size();i++) {
+		if (m_ChannelList[i]->GetOriginalChannelIndex()==m_CurChannel) {
+			return ScrollToChannel(i);
+		}
+	}
+
+	return false;
 }
 
 
@@ -464,6 +506,12 @@ bool CChannelPanel::ExpandChannel(int Channel,bool fExpand)
 		}
 	}
 	return true;
+}
+
+
+void CChannelPanel::SetScrollToCurChannel(bool fScroll)
+{
+	m_fScrollToCurChannel=fScroll;
 }
 
 

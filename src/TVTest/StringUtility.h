@@ -16,6 +16,8 @@ __declspec(restrict) LPWSTR DuplicateString(LPCWSTR pszString);
 bool ReplaceString(LPSTR *ppszString,LPCSTR pszNewString);
 bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString);
 int RemoveTrailingWhitespace(LPTSTR pszString);
+LPTSTR SkipLeadingWhitespace(LPTSTR pszString);
+LPCTSTR SkipLeadingWhitespace(LPCTSTR pszString);
 
 inline bool IsStringEmpty(LPCSTR pszString) {
 	return pszString==NULL || pszString[0]=='\0';
@@ -82,6 +84,8 @@ namespace TVTest
 		bool Trim(String &Str,LPCWSTR pszSpaces=L" \t");
 		bool Replace(String &Str,LPCWSTR pszFrom,LPCWSTR pszTo);
 		bool Replace(String &Str,String::value_type From,String::value_type To);
+		void ToUpper(String &Str);
+		void ToLower(String &Str);
 		bool ToAnsi(const String &Src,AnsiString *pDst);
 		bool Split(const String &Src,LPCWSTR pszDelimiter,std::vector<String> *pList);
 		bool Combine(const std::vector<String> &List,LPCWSTR pszDelimiter,String *pDst);

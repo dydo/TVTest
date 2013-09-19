@@ -28,7 +28,7 @@ class CPlaybackOptions : public COptions
 	CDynamicString m_AudioDeviceName;
 	CDynamicString m_AudioFilterName;
 
-	CAacDecFilter::SpdifOptions m_SpdifOptions;
+	CAudioDecFilter::SpdifOptions m_SpdifOptions;
 	bool m_fDownMixSurround;
 	bool m_fRestoreMute;
 	bool m_fMute;
@@ -64,8 +64,8 @@ public:
 // CPlaybackOptions
 	LPCTSTR GetAudioDeviceName() const { return m_AudioDeviceName.Get(); }
 	LPCTSTR GetAudioFilterName() const { return m_AudioFilterName.Get(); }
-	const CAacDecFilter::SpdifOptions &GetSpdifOptions() const { return m_SpdifOptions; }
-	bool SetSpdifOptions(const CAacDecFilter::SpdifOptions &Options);
+	const CAudioDecFilter::SpdifOptions &GetSpdifOptions() const { return m_SpdifOptions; }
+	bool SetSpdifOptions(const CAudioDecFilter::SpdifOptions &Options);
 	bool GetDownMixSurround() const { return m_fDownMixSurround; }
 	bool GetRestoreMute() const { return m_fRestoreMute; }
 	bool IsMuteOnStartUp() const { return m_fRestoreMute && m_fMute; }

@@ -14,18 +14,18 @@ public:
 	virtual ~CBonSrcPin();
 
 // CBasePin
-	HRESULT GetMediaType(int iPosition, CMediaType *pMediaType);
-	HRESULT CheckMediaType(const CMediaType *pMediaType);
+	HRESULT GetMediaType(int iPosition, CMediaType *pMediaType) override;
+	HRESULT CheckMediaType(const CMediaType *pMediaType) override;
 
-	HRESULT Active(void);
-	HRESULT Inactive(void);
-	HRESULT Run(REFERENCE_TIME tStart);
+	HRESULT Active() override;
+	HRESULT Inactive() override;
+	HRESULT Run(REFERENCE_TIME tStart) override;
 
 // CBaseOutputPin
-	HRESULT DecideBufferSize(IMemAllocator *pAlloc, ALLOCATOR_PROPERTIES *pRequest);
+	HRESULT DecideBufferSize(IMemAllocator *pAlloc, ALLOCATOR_PROPERTIES *pRequest) override;
 
 // CBonSrcPin
-	const bool InputMedia(CMediaData *pMediaData);
+	bool InputMedia(CMediaData *pMediaData);
 
 	void Reset();
 	void Flush();
@@ -33,7 +33,7 @@ public:
 	bool IsSyncEnabled() const;
 	void SetVideoPID(WORD PID);
 	void SetAudioPID(WORD PID);
-	void SetOutputWhenPaused(bool bOutput) { m_bOutputWhenPaused=bOutput; }
+	void SetOutputWhenPaused(bool bOutput) { m_bOutputWhenPaused = bOutput; }
 
 protected:
 	void EndStreamThread();
@@ -42,7 +42,7 @@ protected:
 	CBonSrcFilter* m_pFilter;
 
 	HANDLE m_hThread;
-	volatile bool m_bKillSignal;
+	HANDLE m_hEndEvent;
 	CTsSrcStream m_SrcStream;
 
 	bool m_bOutputWhenPaused;

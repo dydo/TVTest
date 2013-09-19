@@ -2,7 +2,6 @@
 #include <d3d9.h>
 #include <vmr9.h>
 //#include <streams.h>
-#include <atlbase.h>
 #include <vector>
 #include "VMR9Renderless.h"
 #include "DirectShowUtil.h"
@@ -16,7 +15,9 @@ static char THIS_FILE[]=__FILE__;
 
 
 
-class CVMR9Allocator : public IVMRSurfaceAllocator9,IVMRImagePresenter9
+class CVMR9Allocator
+	: public IVMRSurfaceAllocator9
+	, public IVMRImagePresenter9
 {
 	CCritSec m_ObjectLock;
 	HWND m_window;
@@ -28,14 +29,13 @@ class CVMR9Allocator : public IVMRSurfaceAllocator9,IVMRImagePresenter9
 	RECT m_DestRect;
 	bool m_bCrop1088To1080;
 
-	typedef IDirect3D9 *(WINAPI *Direct3DCreateFunc)(UINT SDKVersion);
 	HMODULE m_hD3D9Lib;
-	CComPtr<IDirect3D9>                     m_D3D;
-	CComPtr<IDirect3DDevice9>               m_D3DDev;
+	IDirect3D9 *m_pD3D;
+	IDirect3DDevice9 *m_pD3DDev;
 	IVMRSurfaceAllocatorNotify9 *m_pSurfaceAllocatorNotify;
-	std::vector<CComPtr<IDirect3DSurface9>> m_surfaces;
-	//CComPtr<IDirect3DSurface9>              m_renderTarget;
-	//CComPtr<IDirect3DTexture9>              m_privateTexture;
+	std::vector<IDirect3DSurface9*> m_Surfaces;
+	//IDirect3DSurface9 m_pRenderTarget;
+	//IDirect3DTexture9 m_pPrivateTexture;
 
 	HANDLE m_hCaptureEvent;
 	HANDLE m_hCaptureCompleteEvent;
@@ -45,12 +45,12 @@ public:
 	CVMR9Allocator(HRESULT *phr,HWND wnd,IDirect3D9 *d3d=NULL,IDirect3DDevice9 *d3dd=NULL);
 	virtual ~CVMR9Allocator();
 
-	// IUnknown
+// IUnknown
 	STDMETHOD(QueryInterface)(REFIID riid,void **ppvObject);
 	STDMETHOD_(ULONG,AddRef)();
 	STDMETHOD_(ULONG,Release)();
 
-	// IVMRSurfaceAllocator9
+// IVMRSurfaceAllocator9
 	STDMETHOD(InitializeDevice)(DWORD_PTR dwUserID,
 						VMR9AllocationInfo *lpAllocInfo,DWORD *lpNumBuffers);
 	STDMETHOD(TerminateDevice)(DWORD_PTR dwID);
@@ -58,12 +58,12 @@ public:
 						  DWORD SurfaceFlags,IDirect3DSurface9 **lplpSurface);
 	STDMETHOD(AdviseNotify)(IVMRSurfaceAllocatorNotify9 *lpIVMRSurfAllocNotify);
 
-	// IVMRImagePresenter9
+// IVMRImagePresenter9
 	STDMETHOD(StartPresenting)(DWORD_PTR dwUserID);
 	STDMETHOD(StopPresenting)(DWORD_PTR dwUserID);
 	STDMETHOD(PresentImage)(DWORD_PTR dwUserID,VMR9PresentationInfo *lpPresInfo);
 
-	// CVMR9Allocator
+// CVMR9Allocator
 	//bool GetNativeVideoSize(LONG *pWidth,LONG *pHeight);
 	bool SetVideoPosition(int SourceWidth,int SourceHeight,const RECT *pSrc,const RECT *pDst,const RECT *pWindowRect);
 	bool GetVideoPosition(RECT *pSrc,RECT *pDst);
@@ -86,8 +86,11 @@ protected:
 
 CVMR9Allocator::CVMR9Allocator(HRESULT *phr,HWND wnd,IDirect3D9 *d3d,IDirect3DDevice9 *d3dd)
 	: m_RefCount(1)
-	, m_D3D(d3d)
-	, m_D3DDev(d3dd)
+	, m_pD3D(d3d)
+	, m_pD3DDev(d3dd)
+	, m_pSurfaceAllocatorNotify(NULL)
+	//, m_pRenderTarget(NULL)
+	//, m_pPrivateTexture(NULL)
 	, m_window(wnd)
 	, m_pCaptureSurface(NULL)
 	, m_bCrop1088To1080(true)
@@ -115,22 +118,26 @@ CVMR9Allocator::CVMR9Allocator(HRESULT *phr,HWND wnd,IDirect3D9 *d3d,IDirect3DDe
 		*phr=E_FAIL;
 		return;
 	}
-	Direct3DCreateFunc pDirect3DCreate9=(Direct3DCreateFunc)::GetProcAddress(m_hD3D9Lib,"Direct3DCreate9");
-	if (pDirect3DCreate9==NULL) {
-		*phr=E_FAIL;
-		return;
-	}
 
-	if (m_D3D==NULL) {
-		ASSERT(d3dd== NULL);
-		m_D3D.Attach((*pDirect3DCreate9)(D3D_SDK_VERSION));
-		if (m_D3D==NULL) {
+	if (m_pD3D==NULL) {
+		ASSERT(d3dd==NULL);
+
+		typedef IDirect3D9 *(WINAPI *Direct3DCreateFunc)(UINT SDKVersion);
+		Direct3DCreateFunc pDirect3DCreate9=
+			reinterpret_cast<Direct3DCreateFunc>(::GetProcAddress(m_hD3D9Lib,"Direct3DCreate9"));
+		if (pDirect3DCreate9==NULL) {
+			*phr=E_FAIL;
+			return;
+		}
+
+		m_pD3D=(*pDirect3DCreate9)(D3D_SDK_VERSION);
+		if (m_pD3D==NULL) {
 			*phr=E_FAIL;
 			return;
 		}
 	}
 
-	if (m_D3DDev==NULL)
+	if (m_pD3DDev==NULL)
 		*phr=CreateDevice();
 }
 
@@ -139,8 +146,9 @@ CVMR9Allocator::~CVMR9Allocator()
 {
 	DeleteSurfaces();
 	SAFE_RELEASE(m_pSurfaceAllocatorNotify);
-	m_D3DDev.Release();
-	m_D3D.Release();
+	//SAFE_RELEASE(m_pRenderTarget);
+	SAFE_RELEASE(m_pD3DDev);
+	SAFE_RELEASE(m_pD3D);
 	::CloseHandle(m_hCaptureEvent);
 	::CloseHandle(m_hCaptureCompleteEvent);
 	if (m_hD3D9Lib)
@@ -168,13 +176,13 @@ STDMETHODIMP CVMR9Allocator::QueryInterface(REFIID riid,void **ppvObject)
 
 STDMETHODIMP_(ULONG) CVMR9Allocator::AddRef()
 {
-	return InterlockedIncrement(&m_RefCount);
+	return ::InterlockedIncrement(&m_RefCount);
 }
 
 
 STDMETHODIMP_(ULONG) CVMR9Allocator::Release()
 {
-	LONG Result=InterlockedDecrement(&m_RefCount);
+	LONG Result=::InterlockedDecrement(&m_RefCount);
 	if (Result==0)
 		delete this;
 	return Result;
@@ -185,10 +193,10 @@ HRESULT CVMR9Allocator::CreateDevice()
 {
 	HRESULT hr;
 
-	m_D3DDev=NULL;
+	SAFE_RELEASE(m_pD3DDev);
 
 	D3DDISPLAYMODE dm;
-	hr=m_D3D->GetAdapterDisplayMode(D3DADAPTER_DEFAULT,&dm);
+	hr=m_pD3D->GetAdapterDisplayMode(D3DADAPTER_DEFAULT,&dm);
 	if (FAILED(hr))
 		return hr;
 
@@ -202,27 +210,28 @@ HRESULT CVMR9Allocator::CreateDevice()
 	pp.Windowed=TRUE;
 	//pp.Flags=D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
 
-	hr=m_D3D->CreateDevice(D3DADAPTER_DEFAULT,
-						   D3DDEVTYPE_HAL,
-						   m_window,
-						   D3DCREATE_SOFTWARE_VERTEXPROCESSING |
+	hr=m_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
+							D3DDEVTYPE_HAL,
+							m_window,
+							D3DCREATE_SOFTWARE_VERTEXPROCESSING |
 							D3DCREATE_MULTITHREADED,
-						   &pp,
-						   &m_D3DDev.p);
+							&pp,
+							&m_pD3DDev);
 	if (FAILED(hr)) {
-		hr=m_D3D->CreateDevice(D3DADAPTER_DEFAULT,
-							   D3DDEVTYPE_REF,
-							   m_window,
-							   D3DCREATE_SOFTWARE_VERTEXPROCESSING |
+		hr=m_pD3D->CreateDevice(D3DADAPTER_DEFAULT,
+								D3DDEVTYPE_REF,
+								m_window,
+								D3DCREATE_SOFTWARE_VERTEXPROCESSING |
 								D3DCREATE_MULTITHREADED,
-							   &pp,
-							   &m_D3DDev.p);
+								&pp,
+								&m_pD3DDev);
 		if (FAILED(hr))
 			return hr;
 	}
 
-	//m_renderTarget=NULL;
-	//return m_D3DDev->GetRenderTarget(0,&m_renderTarget.p);
+	//SAFE_RELEASE(m_pRenderTarget);
+	//hr=m_pD3DDev->GetRenderTarget(0,&m_pRenderTarget);
+
 	return hr;
 }
 
@@ -231,36 +240,38 @@ void CVMR9Allocator::DeleteSurfaces()
 {
 	CAutoLock Lock(&m_ObjectLock);
 
-	//m_privateTexture=NULL;
+	//SAFE_RELEASE(m_pPrivateTexture);
 
-	for (size_t i=0;i<m_surfaces.size();i++)
-		m_surfaces[i]=NULL;
+	for (size_t i=0;i<m_Surfaces.size();i++)
+		SAFE_RELEASE(m_Surfaces[i]);
 
 	SAFE_RELEASE(m_pCaptureSurface);
 }
 
 
-STDMETHODIMP CVMR9Allocator::InitializeDevice(DWORD_PTR dwUserID,
-						VMR9AllocationInfo *lpAllocInfo,DWORD *lpNumBuffers)
+STDMETHODIMP CVMR9Allocator::InitializeDevice(
+	DWORD_PTR dwUserID,VMR9AllocationInfo *lpAllocInfo,DWORD *lpNumBuffers)
 {
 	if (lpNumBuffers==NULL)
 		return E_POINTER;
 	if (m_pSurfaceAllocatorNotify==NULL)
 		return E_FAIL;
 
-	TRACE(TEXT("CVMRAllocator::InitializeDevice() : %lu x %lu\n"),
-		  lpAllocInfo->dwWidth,lpAllocInfo->dwHeight);
+	TRACE(TEXT("CVMRAllocator::InitializeDevice() : %u x %u (%u buffers)\n"),
+		  (unsigned int)lpAllocInfo->dwWidth,
+		  (unsigned int)lpAllocInfo->dwHeight,
+		  (unsigned int)*lpNumBuffers);
 
 	HRESULT hr;
 
-	hr=m_pSurfaceAllocatorNotify->SetD3DDevice(m_D3DDev,
-						MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY));
+	hr=m_pSurfaceAllocatorNotify->SetD3DDevice(m_pD3DDev,
+		::MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY));
 	if (FAILED(hr))
 		return hr;
 
 #if 0	// テクスチャ・サーフェスを作成する場合
 	D3DCAPS9 d3dcaps;
-	m_D3DDev->GetDeviceCaps(&d3dcaps);
+	m_pD3DDev->GetDeviceCaps(&d3dcaps);
 	if (d3dcaps.TextureCaps&D3DPTEXTURECAPS_POW2) {
 		DWORD Width=1,Height=1;
 
@@ -275,8 +286,8 @@ STDMETHODIMP CVMR9Allocator::InitializeDevice(DWORD_PTR dwUserID,
 #endif
 
 	DeleteSurfaces();
-	m_surfaces.resize(*lpNumBuffers);
-	hr=m_pSurfaceAllocatorNotify->AllocateSurfaceHelper(lpAllocInfo,lpNumBuffers,&m_surfaces.at(0));
+	m_Surfaces.resize(*lpNumBuffers,NULL);
+	hr=m_pSurfaceAllocatorNotify->AllocateSurfaceHelper(lpAllocInfo,lpNumBuffers,&m_Surfaces[0]);
 
 	/*
 	if (FAILED(hr) && (lpAllocInfo->dwFlags&VMR9AllocFlag_3DRenderTarget)==0) {
@@ -286,18 +297,18 @@ STDMETHODIMP CVMR9Allocator::InitializeDevice(DWORD_PTR dwUserID,
 		if (lpAllocInfo->Format>'0000') {
 			D3DDISPLAYMODE dm;
 
-			hr=m_D3DDev->GetDisplayMode(NULL,&dm);
+			hr=m_pD3DDev->GetDisplayMode(NULL,&dm);
 			if (FAILED(hr))
 				return hr;
 
 			// create the private texture
-			hr=m_D3DDev->CreateTexture(
+			hr=m_pD3DDev->CreateTexture(
 				lpAllocInfo->dwWidth,lpAllocInfo->dwHeight,
 				1,
 				D3DUSAGE_RENDERTARGET,
 				dm.Format,
 				D3DPOOL_DEFAULT,
-				&m_privateTexture.p,
+				&m_pPrivateTexture,
 				NULL);
 			if (FAILED(hr))
 				return hr;
@@ -306,7 +317,7 @@ STDMETHODIMP CVMR9Allocator::InitializeDevice(DWORD_PTR dwUserID,
 		lpAllocInfo->dwFlags&=~VMR9AllocFlag_TextureSurface;
 		lpAllocInfo->dwFlags|=VMR9AllocFlag_OffscreenSurface;
 
-		hr=m_pSurfaceAllocatorNotify->AllocateSurfaceHelper(lpAllocInfo,lpNumBuffers,&m_surfaces.at(0));
+		hr=m_pSurfaceAllocatorNotify->AllocateSurfaceHelper(lpAllocInfo,lpNumBuffers,&m_Surfaces[0]);
 		if (FAILED(hr))
 			return hr;
 	}
@@ -329,12 +340,19 @@ STDMETHODIMP CVMR9Allocator::GetSurface(DWORD_PTR dwUserID,DWORD SurfaceIndex,
 	if (lplpSurface==NULL)
 		return E_POINTER;
 
-	if (SurfaceIndex>=m_surfaces.size())
+	if (SurfaceIndex>=m_Surfaces.size())
 		return E_INVALIDARG;
 
 	CAutoLock Lock(&m_ObjectLock);
 
-	return m_surfaces[SurfaceIndex].CopyTo(lplpSurface);
+	IDirect3DSurface9 *pSurface=m_Surfaces[SurfaceIndex];
+	if (pSurface==NULL)
+		return E_INVALIDARG;
+
+	*lplpSurface=pSurface;
+	pSurface->AddRef();
+
+	return S_OK;
 }
 
 
@@ -346,9 +364,9 @@ STDMETHODIMP CVMR9Allocator::AdviseNotify(IVMRSurfaceAllocatorNotify9 *lpIVMRSur
 	m_pSurfaceAllocatorNotify=lpIVMRSurfAllocNotify;
 	m_pSurfaceAllocatorNotify->AddRef();
 
-	//HMONITOR hMonitor=m_D3D->GetAdapterMonitor(D3DADAPTER_DEFAULT);
-	HMONITOR hMonitor=MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY);
-	hr=m_pSurfaceAllocatorNotify->SetD3DDevice(m_D3DDev,hMonitor);
+	//HMONITOR hMonitor=m_pD3D->GetAdapterMonitor(D3DADAPTER_DEFAULT);
+	HMONITOR hMonitor=::MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY);
+	hr=m_pSurfaceAllocatorNotify->SetD3DDevice(m_pD3DDev,hMonitor);
 
 	return hr;
 }
@@ -358,7 +376,7 @@ STDMETHODIMP CVMR9Allocator::StartPresenting(DWORD_PTR dwUserID)
 {
 	CAutoLock Lock(&m_ObjectLock);
 
-	if (m_D3DDev==NULL)
+	if (m_pD3DDev==NULL)
 		return E_FAIL;
 
 	return S_OK;
@@ -372,7 +390,7 @@ STDMETHODIMP CVMR9Allocator::StopPresenting(DWORD_PTR dwUserID)
 
 
 STDMETHODIMP CVMR9Allocator::PresentImage(DWORD_PTR dwUserID,
-									  VMR9PresentationInfo *lpPresInfo)
+										  VMR9PresentationInfo *lpPresInfo)
 {
 	CAutoLock Lock(&m_ObjectLock);
 	HRESULT hr;
@@ -386,16 +404,16 @@ STDMETHODIMP CVMR9Allocator::PresentImage(DWORD_PTR dwUserID,
 	hr=PresentHelper(lpPresInfo);
 
 	if (hr==D3DERR_DEVICELOST) {
-		if (m_D3DDev->TestCooperativeLevel()==D3DERR_DEVICENOTRESET) {
+		if (m_pD3DDev->TestCooperativeLevel()==D3DERR_DEVICENOTRESET) {
 			DeleteSurfaces();
 			hr=CreateDevice();
 			if (FAILED(hr))
 				return hr;
 
-			//HMONITOR hMonitor=m_D3D->GetAdapterMonitor(D3DADAPTER_DEFAULT);
-			HMONITOR hMonitor=MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY);
+			//HMONITOR hMonitor=m_pD3D->GetAdapterMonitor(D3DADAPTER_DEFAULT);
+			HMONITOR hMonitor=::MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY);
 
-			hr=m_pSurfaceAllocatorNotify->ChangeD3DDevice(m_D3DDev,hMonitor);
+			hr=m_pSurfaceAllocatorNotify->ChangeD3DDevice(m_pD3DDev,hMonitor);
 			if (FAILED(hr))
 				return hr;
 		}
@@ -430,71 +448,42 @@ HRESULT CVMR9Allocator::PresentHelper(VMR9PresentationInfo *lpPresInfo)
 	m_NativeVideoSize.cx=desc.Width;
 	m_NativeVideoSize.cy=desc.Height;
 
-	if (WaitForSingleObject(m_hCaptureEvent,0)==WAIT_OBJECT_0) {
+	if (::WaitForSingleObject(m_hCaptureEvent,0)==WAIT_OBJECT_0) {
 		SAFE_RELEASE(m_pCaptureSurface);
-		hr=m_D3DDev->CreateOffscreenPlainSurface(desc.Width,desc.Height,D3DFMT_X8R8G8B8,//desc.Format,
-									D3DPOOL_DEFAULT,&m_pCaptureSurface,NULL);
+		hr=m_pD3DDev->CreateOffscreenPlainSurface(
+			desc.Width,desc.Height,D3DFMT_X8R8G8B8,//desc.Format,
+			D3DPOOL_DEFAULT,&m_pCaptureSurface,NULL);
 		if (SUCCEEDED(hr)) {
-			hr=m_D3DDev->StretchRect(lpPresInfo->lpSurf,NULL,m_pCaptureSurface,NULL,D3DTEXF_NONE);
+			hr=m_pD3DDev->StretchRect(lpPresInfo->lpSurf,NULL,m_pCaptureSurface,NULL,D3DTEXF_NONE);
 			if (SUCCEEDED(hr)) {
-				SetEvent(m_hCaptureCompleteEvent);
+				::SetEvent(m_hCaptureCompleteEvent);
 			} else {
 				SAFE_RELEASE(m_pCaptureSurface);
 			}
 		}
 	}
 
-	//m_D3DDev->SetRenderTarget(0,m_renderTarget);
+	//m_pD3DDev->SetRenderTarget(0,m_pRenderTarget);
 
-	CComPtr<IDirect3DSurface9> DstSurface;
+	IDirect3DSurface9 *pDstSurface;
 
-	hr=m_D3DDev->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&DstSurface.p);
-	if (FAILED(hr))
-		return hr;
-	hr=m_D3DDev->BeginScene();
-	if (FAILED(hr))
-		return hr;
-#if 1
-	DstSurface->GetDesc(&desc);
-	RECT rcSource,rcDest;
-	CalcTransferRect(desc.Width,desc.Height,&rcSource,&rcDest);
-	m_D3DDev->StretchRect(lpPresInfo->lpSurf,NULL,DstSurface,NULL,D3DTEXF_NONE);
-	hr=m_D3DDev->EndScene();
-	if (FAILED(hr))
-		return hr;
-	return m_D3DDev->Present(&rcSource,&rcDest,NULL,NULL);
-#else
-	RECT rcSource,rcDest;
-	DstSurface->GetDesc(&desc);
-	if (!IsRectEmpty(&m_SourceRect)) {
-		rcSource=m_SourceRect;
-		if (m_SourceSize.cx>0 && m_SourceSize.cy>0)
-			MapRect(&rcSource,m_NativeVideoSize.cx,m_SourceSize.cx,
-							  m_NativeVideoSize.cy,m_SourceSize.cy);
-		MapRect(&rcSource,desc.Width,m_NativeVideoSize.cx,
-						  desc.Height,m_NativeVideoSize.cy);
-	} else {
-		SetRect(&rcSource,0,0,desc.Width,desc.Height);
+	hr=m_pD3DDev->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&pDstSurface);
+	if (SUCCEEDED(hr)) {
+		hr=m_pD3DDev->BeginScene();
+		if (SUCCEEDED(hr)) {
+			pDstSurface->GetDesc(&desc);
+			RECT rcSource,rcDest;
+			CalcTransferRect(desc.Width,desc.Height,&rcSource,&rcDest);
+			m_pD3DDev->StretchRect(lpPresInfo->lpSurf,NULL,pDstSurface,NULL,D3DTEXF_NONE);
+			hr=m_pD3DDev->EndScene();
+			if (SUCCEEDED(hr)) {
+				hr=m_pD3DDev->Present(&rcSource,&rcDest,NULL,NULL);
+			}
+		}
+		pDstSurface->Release();
 	}
-	SetRect(&rcDest,0,0,m_WindowSize.cx,m_WindowSize.cy);
-	if (!IsRectEmpty(&m_DestRect)) {
-		rcDest.right=(m_DestRect.right-m_DestRect.left)*m_NativeVideoSize.cx/(rcSource.right-rcSource.left);
-		rcDest.bottom=(m_DestRect.bottom-m_DestRect.top)*m_NativeVideoSize.cy/(rcSource.bottom-rcSource.top);
-		MapRect(&rcSource,
-				rcDest.right-rcDest.left,desc.Width,
-				rcDest.bottom-rcDest.top,desc.Height);
-	} else {
-		rcSource=rcDest;
-	}
-	m_D3DDev->StretchRect(lpPresInfo->lpSurf,NULL,DstSurface,&rcDest,D3DTEXF_NONE);
-	hr=m_D3DDev->EndScene();
-	if (FAILED(hr))
-		return hr;
 
-	return m_D3DDev->Present(&rcSource,
-							 ::IsRectEmpty(&m_DestRect)?NULL:&m_DestRect,
-							 NULL,NULL);
-#endif
+	return hr;
 }
 
 
@@ -528,12 +517,12 @@ bool CVMR9Allocator::NeedToHandleDisplayChange()
 		return false;
 
 	D3DDEVICE_CREATION_PARAMETERS Parameters;
-	if (FAILED(m_D3DDev->GetCreationParameters(&Parameters)))
+	if (FAILED(m_pD3DDev->GetCreationParameters(&Parameters)))
 		return false;
 
-	HMONITOR hCurrentMonitor=m_D3D->GetAdapterMonitor(Parameters.AdapterOrdinal);
+	HMONITOR hCurrentMonitor=m_pD3D->GetAdapterMonitor(Parameters.AdapterOrdinal);
 
-	HMONITOR hMonitor=m_D3D->GetAdapterMonitor(D3DADAPTER_DEFAULT);
+	HMONITOR hMonitor=m_pD3D->GetAdapterMonitor(D3DADAPTER_DEFAULT);
 
 	return hMonitor!=hCurrentMonitor;
 }
@@ -543,56 +532,31 @@ bool CVMR9Allocator::RepaintVideo()
 {
 	CAutoLock Lock(&m_ObjectLock);
 	HRESULT hr;
-	CComPtr<IDirect3DSurface9> DstSurface;
+	IDirect3DSurface9 *pDstSurface;
 	D3DSURFACE_DESC desc;
 	RECT rcSource,rcDest;
 
 	if (m_NativeVideoSize.cx==0 || m_NativeVideoSize.cy==0)
 		return false;
-	hr=m_D3DDev->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&DstSurface.p);
+	hr=m_pD3DDev->GetBackBuffer(0,0,D3DBACKBUFFER_TYPE_MONO,&pDstSurface);
 	if (FAILED(hr))
 		return false;
-	DstSurface->GetDesc(&desc);
-#if 1
+	pDstSurface->GetDesc(&desc);
 	CalcTransferRect(desc.Width,desc.Height,&rcSource,&rcDest);
-	hr=m_D3DDev->Present(&rcSource,&rcDest,NULL,NULL);
-#else
-	if (!IsRectEmpty(&m_SourceRect)) {
-		rcSource=m_SourceRect;
-		if (m_SourceSize.cx>0 && m_SourceSize.cy>0)
-			MapRect(&rcSource,m_NativeVideoSize.cx,m_SourceSize.cx,
-							  m_NativeVideoSize.cy,m_SourceSize.cy);
-		MapRect(&rcSource,desc.Width,m_NativeVideoSize.cx,
-						  desc.Height,m_NativeVideoSize.cy);
-	} else {
-		SetRect(&rcSource,0,0,desc.Width,desc.Height);
-	}
-	SetRect(&rcDest,0,0,m_WindowSize.cx,m_WindowSize.cy);
-	if (!IsRectEmpty(&m_DestRect)) {
-		rcDest.right=(m_DestRect.right-m_DestRect.left)*m_NativeVideoSize.cx/(rcSource.right-rcSource.left);
-		rcDest.bottom=(m_DestRect.bottom-m_DestRect.top)*m_NativeVideoSize.cy/(rcSource.bottom-rcSource.top);
-		MapRect(&rcSource,
-				rcDest.right-rcDest.left,desc.Width,
-				rcDest.bottom-rcDest.top,desc.Height);
-	} else {
-		rcSource=rcDest;
-	}
-	hr=m_D3DDev->Present(&rcSource,
-						 ::IsRectEmpty(&m_DestRect)?NULL:&m_DestRect,
-						 NULL,NULL);
-#endif
+	hr=m_pD3DDev->Present(&rcSource,&rcDest,NULL,NULL);
+	pDstSurface->Release();
 	return SUCCEEDED(hr);
 }
 
 
 bool CVMR9Allocator::SetCapture(bool fCapture)
 {
-	ResetEvent(m_hCaptureCompleteEvent);
+	::ResetEvent(m_hCaptureCompleteEvent);
 	if (fCapture) {
 		SAFE_RELEASE(m_pCaptureSurface);
-		SetEvent(m_hCaptureEvent);
+		::SetEvent(m_hCaptureEvent);
 	} else {
-		ResetEvent(m_hCaptureEvent);
+		::ResetEvent(m_hCaptureEvent);
 	}
 	return true;
 }
@@ -600,7 +564,7 @@ bool CVMR9Allocator::SetCapture(bool fCapture)
 
 bool CVMR9Allocator::WaitCapture(DWORD TimeOut)
 {
-	return WaitForSingleObject(m_hCaptureCompleteEvent,TimeOut)==WAIT_OBJECT_0;
+	return ::WaitForSingleObject(m_hCaptureCompleteEvent,TimeOut)==WAIT_OBJECT_0;
 }
 
 
@@ -649,12 +613,12 @@ bool CVMR9Allocator::SetVideoPosition(int SourceWidth,int SourceHeight,const REC
 	if (pWindowRect->right-pWindowRect->left!=m_WindowSize.cx
 			|| pWindowRect->bottom-pWindowRect->top!=m_WindowSize.cy) {
 	/*
-		if (m_D3DDev!=NULL && m_pSurfaceAllocatorNotify!=NULL) {
+		if (m_pD3DDev!=NULL && m_pSurfaceAllocatorNotify!=NULL) {
 			HRESULT hr;
 			D3DDISPLAYMODE dm;
 
 			DeleteSurfaces();
-			hr=m_D3D->GetAdapterDisplayMode(D3DADAPTER_DEFAULT,&dm);
+			hr=m_pD3D->GetAdapterDisplayMode(D3DADAPTER_DEFAULT,&dm);
 			D3DPRESENT_PARAMETERS pp;
 			ZeroMemory(&pp,sizeof(pp));
 			pp.BackBufferWidth=rc.right;
@@ -663,10 +627,10 @@ bool CVMR9Allocator::SetVideoPosition(int SourceWidth,int SourceHeight,const REC
 			pp.SwapEffect=D3DSWAPEFFECT_COPY;
 			pp.hDeviceWindow=m_window;
 			pp.Windowed=TRUE;
-			hr=m_D3DDev->Reset(&pp);
+			hr=m_pD3DDev->Reset(&pp);
 			if (SUCCEEDED(hr)) {
-				HMONITOR hMonitor=MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY);
-				hr=m_pSurfaceAllocatorNotify->ChangeD3DDevice(m_D3DDev,hMonitor);
+				HMONITOR hMonitor=::MonitorFromWindow(m_window,MONITOR_DEFAULTTOPRIMARY);
+				hr=m_pSurfaceAllocatorNotify->ChangeD3DDevice(m_pD3DDev,hMonitor);
 				if (FAILED(hr))
 					return false;
 			}
@@ -714,8 +678,8 @@ bool CVMR9Allocator::GetVideoPosition(RECT *pSrc,RECT *pDst)
 
 
 CVideoRenderer_VMR9Renderless::CVideoRenderer_VMR9Renderless()
+	: m_pAllocator(NULL)
 {
-	m_pAllocator=NULL;
 }
 
 
@@ -730,7 +694,7 @@ bool CVideoRenderer_VMR9Renderless::Initialize(IGraphBuilder *pFilterGraph,IPin 
 	HRESULT hr;
 
 	hr=::CoCreateInstance(CLSID_VideoMixingRenderer9,NULL,CLSCTX_INPROC_SERVER,
-						IID_IBaseFilter,reinterpret_cast<LPVOID*>(&m_pRenderer));
+						  IID_IBaseFilter,reinterpret_cast<LPVOID*>(&m_pRenderer));
 	if (FAILED(hr)) {
 		SetError(hr,TEXT("VMR-9のインスタンスを作成できません。"));
 		return false;
@@ -744,7 +708,7 @@ bool CVideoRenderer_VMR9Renderless::Initialize(IGraphBuilder *pFilterGraph,IPin 
 
 	IVMRFilterConfig *pFilterConfig;
 	m_pRenderer->QueryInterface(IID_IVMRFilterConfig9,
-									reinterpret_cast<LPVOID*>(&pFilterConfig));
+								reinterpret_cast<LPVOID*>(&pFilterConfig));
 	pFilterConfig->SetRenderingMode(VMR9Mode_Renderless);
 	pFilterConfig->Release();
 
@@ -787,8 +751,9 @@ bool CVideoRenderer_VMR9Renderless::Finalize()
 }
 
 
-bool CVideoRenderer_VMR9Renderless::SetVideoPosition(int SourceWidth,int SourceHeight,const RECT *pSourceRect,
-								const RECT *pDestRect,const RECT *pWindowRect)
+bool CVideoRenderer_VMR9Renderless::SetVideoPosition(
+	int SourceWidth,int SourceHeight,const RECT *pSourceRect,
+	const RECT *pDestRect,const RECT *pWindowRect)
 {
 	if (m_pRenderer==NULL || m_pAllocator==NULL)
 		return false;

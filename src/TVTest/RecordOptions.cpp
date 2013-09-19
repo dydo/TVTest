@@ -49,7 +49,6 @@ CRecordOptions::CRecordOptions()
 	, m_fCurServiceOnly(false)
 	, m_fSaveSubtitle(true)
 	, m_fSaveDataCarrousel(true)
-	, m_fDescrambleCurServiceOnly(false)
 	, m_fAlertLowFreeSpace(true)
 	, m_LowFreeSpaceThreshold(2048)
 	, m_BufferSize(WRITE_BUFFER_SIZE_DEFAULT)
@@ -140,7 +139,6 @@ bool CRecordOptions::ReadSettings(CSettings &Settings)
 	Settings.Read(TEXT("RecordCurServiceOnly"),&m_fCurServiceOnly);
 	Settings.Read(TEXT("RecordSubtitle"),&m_fSaveSubtitle);
 	Settings.Read(TEXT("RecordDataCarrousel"),&m_fSaveDataCarrousel);
-	Settings.Read(TEXT("RecordDescrambleCurServiceOnly"),&m_fDescrambleCurServiceOnly);
 	if (Settings.Read(TEXT("RecordBufferSize"),&Value))
 		m_BufferSize=CLAMP(Value,WRITE_BUFFER_SIZE_MIN,WRITE_BUFFER_SIZE_MAX);
 	Settings.Read(TEXT("AlertLowFreeSpace"),&m_fAlertLowFreeSpace);
@@ -178,7 +176,6 @@ bool CRecordOptions::WriteSettings(CSettings &Settings)
 	Settings.Write(TEXT("RecordCurServiceOnly"),m_fCurServiceOnly);
 	Settings.Write(TEXT("RecordSubtitle"),m_fSaveSubtitle);
 	Settings.Write(TEXT("RecordDataCarrousel"),m_fSaveDataCarrousel);
-	Settings.Write(TEXT("RecordDescrambleCurServiceOnly"),m_fDescrambleCurServiceOnly);
 	Settings.Write(TEXT("RecordBufferSize"),m_BufferSize);
 	Settings.Write(TEXT("AlertLowFreeSpace"),m_fAlertLowFreeSpace);
 	Settings.Write(TEXT("LowFreeSpaceThreshold"),m_LowFreeSpaceThreshold);
@@ -347,7 +344,6 @@ bool CRecordOptions::ApplyOptions(CRecordManager *pManager)
 	if (!m_fSaveDataCarrousel)
 		Stream^=CTsSelector::STREAM_DATACARROUSEL;
 	pManager->SetSaveStream(Stream);
-	pManager->SetDescrambleCurServiceOnly(m_fDescrambleCurServiceOnly);
 	pManager->SetBufferSize(m_BufferSize);
 	return true;
 }
@@ -386,8 +382,6 @@ INT_PTR CRecordOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 				m_fSaveSubtitle?BST_CHECKED:BST_UNCHECKED);
 			::CheckDlgButton(hDlg,IDC_RECORDOPTIONS_SAVEDATACARROUSEL,
 				m_fSaveDataCarrousel?BST_CHECKED:BST_UNCHECKED);
-			::CheckDlgButton(hDlg,IDC_RECORDOPTIONS_DESCRAMBLECURSERVICEONLY,
-				m_fDescrambleCurServiceOnly?BST_CHECKED:BST_UNCHECKED);
 
 			DlgCheckBox_Check(hDlg,IDC_RECORDOPTIONS_ALERTLOWFREESPACE,m_fAlertLowFreeSpace);
 			::SetDlgItemInt(hDlg,IDC_RECORDOPTIONS_LOWFREESPACETHRESHOLD,m_LowFreeSpaceThreshold,FALSE);
@@ -561,9 +555,6 @@ INT_PTR CRecordOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 				}
 				if (fOptionChanged)
 					SetUpdateFlag(UPDATE_RECORDSTREAM);
-
-				m_fDescrambleCurServiceOnly=
-					DlgCheckBox_IsChecked(hDlg,IDC_RECORDOPTIONS_DESCRAMBLECURSERVICEONLY);
 
 				m_fAlertLowFreeSpace=
 					DlgCheckBox_IsChecked(hDlg,IDC_RECORDOPTIONS_ALERTLOWFREESPACE);

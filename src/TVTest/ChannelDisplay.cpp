@@ -215,7 +215,7 @@ bool CChannelDisplay::SetSelect(LPCTSTR pszDriverFileName,const CChannelInfo *pC
 	int TunerIndex=0;
 	for (size_t i=0;i<m_TunerList.size();i++) {
 		const CTuner *pTuner=m_TunerList[i];
-		if (::lstrcmpi(pTuner->GetDriverFileName(),pszDriverFileName)==0) {
+		if (IsEqualFileName(pTuner->GetDriverFileName(),pszDriverFileName)) {
 			int Space=0,Channel=-1;
 			if (pChannelInfo!=NULL) {
 				for (int j=0;j<pTuner->NumSpaces();j++) {

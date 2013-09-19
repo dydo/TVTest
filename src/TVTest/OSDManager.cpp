@@ -82,7 +82,7 @@ bool COSDManager::ShowOSD(LPCTSTR pszText,unsigned int Flags)
 			LOGFONT lf;
 			HFONT hfont;
 
-			::GetObject(::GetStockObject(DEFAULT_GUI_FONT),sizeof(LOGFONT),&lf);
+			lf=*m_pOptions->GetOSDFont();
 			lf.lfHeight=(rcSrc.right-rcSrc.left)/20;
 			lf.lfWidth=0;
 			lf.lfQuality=NONANTIALIASED_QUALITY;
@@ -114,12 +114,15 @@ bool COSDManager::ShowOSD(LPCTSTR pszText,unsigned int Flags)
 			::DeleteObject(hfont);
 		}
 	} else {
-		int TextHeight;
+		int TextHeight=max((rc.right-rc.left)/24,12);
+		LOGFONT lf;
 		SIZE sz;
 
-		TextHeight=max((rc.right-rc.left)/24,12);
+		lf=*m_pOptions->GetOSDFont();
+		lf.lfHeight=-TextHeight;
 		m_OSD.Create(hwnd,m_pOptions->GetLayeredWindow());
-		m_OSD.SetTextHeight(TextHeight);
+		//m_OSD.SetTextHeight(TextHeight);
+		m_OSD.SetFont(lf);
 		m_OSD.SetText(pszText);
 		m_OSD.CalcTextSize(&sz);
 		m_OSD.SetPosition(rc.left+8,rc.top+8,sz.cx,sz.cy);
@@ -205,7 +208,7 @@ bool COSDManager::ShowChannelOSD(const CChannelInfo *pInfo,bool fChanging)
 				LOGFONT lf;
 				HFONT hfont;
 
-				::GetObject(::GetStockObject(DEFAULT_GUI_FONT),sizeof(LOGFONT),&lf);
+				lf=*m_pOptions->GetOSDFont();
 				lf.lfHeight=(rcSrc.right-rcSrc.left)/20;
 				lf.lfWidth=0;
 				lf.lfQuality=NONANTIALIASED_QUALITY;
@@ -240,13 +243,16 @@ bool COSDManager::ShowChannelOSD(const CChannelInfo *pInfo,bool fChanging)
 			}
 		}
 	} else {
-		int TextHeight;
+		int TextHeight=max((rc.right-rc.left)/24,12);
+		LOGFONT lf;
 		SIZE sz;
 		COLORREF cr;
 
-		TextHeight=max((rc.right-rc.left)/24,12);
+		lf=*m_pOptions->GetOSDFont();
+		lf.lfHeight=-TextHeight;
 		m_OSD.Create(hwnd,m_pOptions->GetLayeredWindow());
-		m_OSD.SetTextHeight(TextHeight);
+		//m_OSD.SetTextHeight(TextHeight);
+		m_OSD.SetFont(lf);
 		m_OSD.SetText(szText,hbmLogo,LogoWidth,LogoHeight,ImageEffect);
 		m_OSD.CalcTextSize(&sz);
 		m_OSD.SetPosition(rc.left+8,rc.top+8,
@@ -303,7 +309,7 @@ bool COSDManager::ShowVolumeOSD(int Volume)
 			LOGFONT lf;
 			HFONT hfont;
 
-			::GetObject(::GetStockObject(DEFAULT_GUI_FONT),sizeof(LOGFONT),&lf);
+			lf=*m_pOptions->GetOSDFont();
 			lf.lfHeight=(rcSrc.right-rcSrc.left)/(VolumeSteps*2);
 			lf.lfQuality=NONANTIALIASED_QUALITY;
 			hfont=::CreateFontIndirect(&lf);
@@ -318,10 +324,15 @@ bool COSDManager::ShowVolumeOSD(int Volume)
 			::DeleteObject(hfont);
 		}
 	} else {
+		int TextHeight=CLAMP((int)(rc.right-rc.left-32)/VolumeSteps,6,16);
+		LOGFONT lf;
 		SIZE sz;
 
+		lf=*m_pOptions->GetOSDFont();
+		lf.lfHeight=-TextHeight;
 		m_VolumeOSD.Create(hwnd,m_pOptions->GetLayeredWindow());
-		m_VolumeOSD.SetTextHeight(CLAMP((int)(rc.right-rc.left-32)/VolumeSteps,6,16));
+		//m_VolumeOSD.SetTextHeight(TextHeight);
+		m_VolumeOSD.SetFont(lf);
 		m_VolumeOSD.SetText(szText);
 		m_VolumeOSD.CalcTextSize(&sz);
 		m_VolumeOSD.SetPosition(rc.left+8,rc.bottom-sz.cy-8,sz.cx,sz.cy);

@@ -53,10 +53,13 @@ bool ChooseFontDialog(HWND hwndOwner,LOGFONT *plf);
 bool BrowseFolderDialog(HWND hwndOwner,LPTSTR pszDirectory,LPCTSTR pszTitle);
 
 bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2);
+int PixelsToPoints(int Pixels);
+int PointsToPixels(int Points);
 int CalcFontPointHeight(HDC hdc,const LOGFONT *pFont);
 
 int GetErrorText(DWORD ErrorCode,LPTSTR pszText,int MaxLength);
 
+bool IsEqualFileName(LPCWSTR pszFileName1,LPCWSTR pszFileName2);
 bool IsValidFileName(LPCTSTR pszFileName,bool fWildcard=false,LPTSTR pszMessage=NULL,int MaxMessage=0);
 bool GetAbsolutePath(LPCTSTR pszFilePath,LPTSTR pszAbsolutePath,int MaxLength);
 

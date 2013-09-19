@@ -22,6 +22,7 @@ public:
 	BYTE *GetData();
 	const BYTE *GetData() const;
 	const DWORD GetSize() const { return m_dwDataSize; }
+	const DWORD GetBufferSize() const { return m_dwBuffSize; }
 
 	void SetAt(const DWORD dwPos, const BYTE byData);
 	const BYTE GetAt(const DWORD dwPos) const;

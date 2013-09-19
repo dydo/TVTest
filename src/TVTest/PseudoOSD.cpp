@@ -291,7 +291,18 @@ bool CPseudoOSD::SetTextHeight(int Height)
 
 	if (!m_Font.GetLogFont(&lf))
 		return false;
+	lf.lfWidth=0;
 	lf.lfHeight=-Height;
+	return m_Font.Create(&lf);
+}
+
+
+bool CPseudoOSD::SetFont(const LOGFONT &Font)
+{
+	LOGFONT lf;
+
+	lf=Font;
+	lf.lfQuality=NONANTIALIASED_QUALITY;
 	return m_Font.Create(&lf);
 }
 

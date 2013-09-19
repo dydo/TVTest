@@ -10,11 +10,11 @@
 #include "TsUtilClass.h"
 #include "../DirectShowFilter/DirectShowUtil.h"
 #include "../DirectShowFilter/BonSrcFilter.h"
-#include "../DirectShowFilter/AacDecFilter.h"
+#include "../DirectShowFilter/AudioDecFilter.h"
 #include "../DirectShowFilter/VideoRenderer.h"
 #include "../DirectShowFilter/ImageMixer.h"
 #ifndef BONTSENGINE_H264_SUPPORT
-#include "../DirectShowFilter/Mpeg2SequenceFilter.h"
+#include "../DirectShowFilter/Mpeg2ParserFilter.h"
 #else
 #include "../DirectShowFilter/H264ParserFilter.h"
 #endif
@@ -116,8 +116,8 @@ public:
 	const void HideCursor(bool bHide);
 	const bool GetCurrentImage(BYTE **ppDib);
 
-	bool SetSpdifOptions(const CAacDecFilter::SpdifOptions *pOptions);
-	bool GetSpdifOptions(CAacDecFilter::SpdifOptions *pOptions) const;
+	bool SetSpdifOptions(const CAudioDecFilter::SpdifOptions *pOptions);
+	bool GetSpdifOptions(CAudioDecFilter::SpdifOptions *pOptions) const;
 	bool IsSpdifPassthrough() const;
 	bool SetAutoStereoMode(int Mode);
 	bool SetDownMixSurround(bool bDownMix);
@@ -127,7 +127,7 @@ public:
 	bool SetUseAudioRendererClock(bool bUse);
 	bool GetUseAudioRendererClock() const { return m_bUseAudioRendererClock; }
 	bool SetAdjustAudioStreamTime(bool bAdjust);
-	bool SetAudioStreamCallback(CAacDecFilter::StreamCallback pCallback, void *pParam = NULL);
+	bool SetAudioStreamCallback(CAudioDecFilter::StreamCallback pCallback, void *pParam = NULL);
 	bool SetAudioFilter(LPCWSTR pszFilterName);
 	const bool RepaintVideo(HWND hwnd,HDC hdc);
 	const bool DisplayModeChanged();
@@ -144,7 +144,7 @@ public:
 	DWORD GetVideoBitRate() const;
 
 protected:
-	static void CALLBACK OnMpeg2VideoInfo(const CMpeg2VideoInfo *pVideoInfo,const LPVOID pParam);
+	static void CALLBACK OnVideoInfo(const CVideoParser::VideoInfo *pVideoInfo,const LPVOID pParam);
 	const bool AdjustVideoPosition();
 	const bool CalcSourceRect(RECT *pRect);
 
@@ -158,8 +158,8 @@ protected:
 	IBaseFilter *m_pVideoDecoderFilter;
 	// Source
 	CBonSrcFilter *m_pSrcFilter;
-	// AACデコーダ
-	CAacDecFilter *m_pAacDecoder;
+	// 音声デコーダ
+	CAudioDecFilter *m_pAudioDecoder;
 	// 音声フィルタ
 	LPWSTR m_pszAudioFilterName;
 	IBaseFilter *m_pAudioFilter;
@@ -169,8 +169,8 @@ protected:
 	IBaseFilter *m_pAudioRenderer;
 
 #ifndef BONTSENGINE_H264_SUPPORT
-	// Mpeg2-Sequence
-	CMpeg2SequenceFilter *m_pMpeg2Sequence;
+	// MPEG-2 parser
+	CMpeg2ParserFilter *m_pMpeg2Parser;
 #else
 	// H.264 parser
 	CH264ParserFilter *m_pH264Parser;
@@ -191,8 +191,7 @@ protected:
 
 	WORD m_wVideoWindowX;
 	WORD m_wVideoWindowY;
-	CMpeg2VideoInfo m_VideoInfo;
-	WORD m_DemuxerMediaWidth;
+	CVideoParser::VideoInfo m_VideoInfo;
 	HWND m_hOwnerWnd;
 
 	CCriticalLock m_ResizeLock;
@@ -210,7 +209,7 @@ protected:
 	bool m_bAdjustVideoSampleTime;
 	bool m_bAdjustFrameRate;
 #endif
-	CAacDecFilter::StreamCallback m_pAudioStreamCallback;
+	CAudioDecFilter::StreamCallback m_pAudioStreamCallback;
 	void *m_pAudioStreamCallbackParam;
 	CImageMixer *m_pImageMixer;
 	CTracer *m_pTracer;

@@ -52,12 +52,14 @@ public:
 // CChannelPanel
 	bool SetEpgProgramList(CEpgProgramList *pList);
 	bool SetChannelList(const CChannelList *pChannelList,bool fSetEvent=true);
+	void ClearChannelList() { SetChannelList(NULL); }
 	bool UpdateAllChannels(bool fUpdateProgramList);
 	bool UpdateChannel(int ChannelIndex);
 	bool UpdateChannels(WORD NetworkID,WORD TransportStreamID);
-	void ClearChannelList() { SetChannelList(NULL); }
 	bool IsChannelListEmpty() const;
 	bool SetCurrentChannel(int CurChannel);
+	bool ScrollToChannel(int Channel);
+	bool ScrollToCurrentChannel();
 	void SetEventHandler(CEventHandler *pEventHandler);
 	bool SetTheme(const ThemeInfo *pTheme);
 	bool GetTheme(ThemeInfo *pTheme) const;
@@ -69,6 +71,8 @@ public:
 	int GetEventsPerChannel() const { return m_EventsPerChannel; }
 	int GetExpandAdditionalEvents() const { return m_ExpandAdditionalEvents; }
 	bool ExpandChannel(int Channel,bool fExpand);
+	void SetScrollToCurChannel(bool fScroll);
+	bool GetScrollToCurChannel() const { return m_fScrollToCurChannel; }
 	void SetLogoManager(CLogoManager *pLogoManager);
 	bool QueryUpdate() const;
 
@@ -124,6 +128,7 @@ private:
 	int m_ExpandAdditionalEvents;
 	int m_ExpandEvents;
 	int m_ScrollPos;
+	bool m_fScrollToCurChannel;
 	std::vector<CChannelEventInfo*> m_ChannelList;
 	int m_CurChannel;
 	CEventHandler *m_pEventHandler;
@@ -139,7 +144,6 @@ private:
 		bool HitTest(int x,int y,LPARAM *pParam);
 		bool GetEventInfo(LPARAM Param,const CEventInfoData **ppInfo);
 	};
-	friend CEventInfoPopupHandler;
 	CEventInfoPopupHandler m_EventInfoPopupHandler;
 	CLogoManager *m_pLogoManager;
 	SYSTEMTIME m_UpdatedTime;
@@ -147,6 +151,7 @@ private:
 	static const LPCTSTR m_pszClassName;
 	static HINSTANCE m_hinst;
 
+	void ClearChannels();
 	bool UpdateEvents(CChannelEventInfo *pInfo,const SYSTEMTIME *pTime=NULL);
 	void Draw(HDC hdc,const RECT *prcPaint);
 	void SetScrollPos(int Pos);

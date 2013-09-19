@@ -482,7 +482,7 @@ bool CNetworkRemoconOptions::FindChannelFile(LPCTSTR pszDriverName,LPTSTR pszFil
 		for (i=0;*p!=')';i++)
 			szName[i]=*p++;
 		szName[i]='\0';
-		if (::lstrcmpi(szName,pszDriverName)==0) {
+		if (IsEqualFileName(szName,pszDriverName)) {
 			::lstrcpy(pszFileName,wfd.cFileName);
 			fFound=true;
 			break;
@@ -588,7 +588,7 @@ INT_PTR CNetworkRemoconOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM
 				} else if (m_fUseNetworkRemocon || m_fTempEnable) {
 					if (m_Port!=Port
 							|| ::lstrcmpiA(m_szAddress,szAddress)!=0
-							|| ::lstrcmpi(m_szChannelFileName,szChannelFile)!=0) {
+							|| !IsEqualFileName(m_szChannelFileName,szChannelFile)) {
 						fUpdate=true;
 					}
 				}

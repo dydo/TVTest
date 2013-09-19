@@ -194,15 +194,15 @@ class CEpgProgramList
 public:
 	enum {
 		SERVICE_UPDATE_DISCARD_OLD_EVENTS	= 0x0001U,
-		SERVICE_UPDATE_DISCARD_ENDED_EVENTS	= 0x0002U
+		SERVICE_UPDATE_DISCARD_ENDED_EVENTS	= 0x0002U,
+		SERVICE_UPDATE_DATABASE				= 0x0004U
 	};
 
 	CEpgProgramList(CEventManager *pEventManager);
 	~CEpgProgramList();
 	bool UpdateService(const CEventManager::ServiceInfo *pService,UINT Flags=0);
 	bool UpdateService(CEventManager *pEventManager,
-					   const CEventManager::ServiceInfo *pService,
-					   UINT Flags=0);
+					   const CEventManager::ServiceInfo *pService,UINT Flags=0);
 	bool UpdateService(WORD NetworkID,WORD TSID,WORD ServiceID,UINT Flags=0);
 	bool UpdateServices(WORD NetworkID,WORD TSID,UINT Flags=0);
 	bool UpdateProgramList(UINT Flags=0);

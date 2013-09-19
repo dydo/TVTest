@@ -13,7 +13,8 @@ static char THIS_FILE[]=__FILE__;
 #define TS_PACKETSIZE	188
 #endif
 
-#define SAMPLE_PACKETS 1024
+#define SAMPLE_PACKETS		1024
+#define SAMPLE_BUFFER_SIZE	(TS_PACKETSIZE * SAMPLE_PACKETS)
 
 
 
@@ -22,28 +23,32 @@ CBonSrcPin::CBonSrcPin(HRESULT *phr, CBonSrcFilter *pFilter)
 	: CBaseOutputPin(TEXT("CBonSrcPin"), pFilter, pFilter->m_pLock, phr, L"TS")
 	, m_pFilter(pFilter)
 	, m_hThread(NULL)
+	, m_hEndEvent(NULL)
 	, m_SrcStream(0x1000)
 	, m_bOutputWhenPaused(false)
 {
-	TRACE(TEXT("CBonSrcPin::CBonSrcPin() %p\n"),this);
+	TRACE(TEXT("CBonSrcPin::CBonSrcPin() %p\n"), this);
 
 	*phr = S_OK;
 }
 
-CBonSrcPin::~CBonSrcPin(void)
+
+CBonSrcPin::~CBonSrcPin()
 {
-	//TRACE(TEXT("CBonSrcPin::~CBonSrcPin()\n"));
+	TRACE(TEXT("CBonSrcPin::~CBonSrcPin()\n"));
 
 	EndStreamThread();
 }
 
+
 HRESULT CBonSrcPin::GetMediaType(int iPosition, CMediaType *pMediaType)
 {
-	CAutoLock AutoLock(&m_pFilter->m_cStateLock);
 	CheckPointer(pMediaType, E_POINTER);
 
-	if(iPosition < 0)return E_INVALIDARG;
-	if(iPosition > 0)return VFW_S_NO_MORE_ITEMS;
+	if (iPosition < 0)
+		return E_INVALIDARG;
+	if (iPosition > 0)
+		return VFW_S_NO_MORE_ITEMS;
 
 	// メディアタイプ設定
 	pMediaType->InitMediaType();
@@ -55,60 +60,81 @@ HRESULT CBonSrcPin::GetMediaType(int iPosition, CMediaType *pMediaType)
 	return S_OK;
 }
 
+
 HRESULT CBonSrcPin::CheckMediaType(const CMediaType *pMediaType)
 {
-	CAutoLock AutoLock(&m_pFilter->m_cStateLock);
 	CheckPointer(pMediaType, E_POINTER);
+	CAutoLock AutoLock(&m_pFilter->m_cStateLock);
 
 	// メディアタイプをチェックする
-	CMediaType m_mt;
-	GetMediaType(0, &m_mt);
+	CMediaType mt;
+	GetMediaType(0, &mt);
 
-	return (*pMediaType == m_mt) ? S_OK : E_FAIL;
+	return (*pMediaType == mt) ? S_OK : E_FAIL;
 }
 
-HRESULT CBonSrcPin::Active(void)
+
+HRESULT CBonSrcPin::Active()
 {
 	TRACE(TEXT("CBonSrcPin::Active()\n"));
 
-	HRESULT hr=CBaseOutputPin::Active();
+	HRESULT hr = CBaseOutputPin::Active();
 	if (FAILED(hr))
 		return hr;
 
 	if (m_hThread)
 		return E_UNEXPECTED;
 
-	m_bKillSignal=false;
 	m_SrcStream.Reset();
-	m_hThread=(HANDLE)::_beginthreadex(NULL,0,StreamThread,this,0,NULL);
-	if (m_hThread==NULL) {
+
+	if (m_hEndEvent == NULL) {
+		m_hEndEvent = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+		if (m_hEndEvent == NULL) {
+			DWORD Error = ::GetLastError();
+			return HRESULT_FROM_WIN32(Error);
+		}
+	} else {
+		::ResetEvent(m_hEndEvent);
+	}
+
+	m_hThread = reinterpret_cast<HANDLE>(::_beginthreadex(NULL, 0, StreamThread, this, 0, NULL));
+	if (m_hThread == NULL) {
 		return E_FAIL;
 	}
+
 	return S_OK;
 }
+
 
 void CBonSrcPin::EndStreamThread()
 {
 	if (m_hThread) {
-		m_bKillSignal=true;
-		if (::WaitForSingleObject(m_hThread, 1000) == WAIT_TIMEOUT) {
+		::SetEvent(m_hEndEvent);
+		if (::WaitForSingleObject(m_hThread, 5000) == WAIT_TIMEOUT) {
 			::TerminateThread(m_hThread, -1);
 		}
 		::CloseHandle(m_hThread);
-		m_hThread=NULL;
+		m_hThread = NULL;
+	}
+
+	if (m_hEndEvent) {
+		::CloseHandle(m_hEndEvent);
+		m_hEndEvent = NULL;
 	}
 }
 
-HRESULT CBonSrcPin::Inactive(void)
+
+HRESULT CBonSrcPin::Inactive()
 {
 	TRACE(TEXT("CBonSrcPin::Inactive()\n"));
 
-	HRESULT hr=CBaseOutputPin::Inactive();
+	HRESULT hr = CBaseOutputPin::Inactive();
 
 	EndStreamThread();
 
 	return hr;
 }
+
 
 HRESULT CBonSrcPin::Run(REFERENCE_TIME tStart)
 {
@@ -117,49 +143,56 @@ HRESULT CBonSrcPin::Run(REFERENCE_TIME tStart)
 	return CBaseOutputPin::Run(tStart);
 }
 
+
 HRESULT CBonSrcPin::DecideBufferSize(IMemAllocator *pAlloc, ALLOCATOR_PROPERTIES *pRequest)
 {
-	CAutoLock AutoLock(&m_pFilter->m_cStateLock);
 	CheckPointer(pAlloc, E_POINTER);
 	CheckPointer(pRequest, E_POINTER);
 
 	// バッファは1個あればよい
-	if(!pRequest->cBuffers)pRequest->cBuffers = 1;
+	if (pRequest->cBuffers < 1)
+		pRequest->cBuffers = 1;
 
-	// とりあえずTSパケット長確保
-	if(pRequest->cbBuffer < TS_PACKETSIZE * SAMPLE_PACKETS)
-		pRequest->cbBuffer = TS_PACKETSIZE * SAMPLE_PACKETS;
+	// バッファサイズ指定
+	if (pRequest->cbBuffer < SAMPLE_BUFFER_SIZE)
+		pRequest->cbBuffer = SAMPLE_BUFFER_SIZE;
 
 	// アロケータプロパティを設定しなおす
 	ALLOCATOR_PROPERTIES Actual;
 	HRESULT hr = pAlloc->SetProperties(pRequest, &Actual);
-	if(FAILED(hr))return hr;
+	if (FAILED(hr))
+		return hr;
 
 	// 要求を受け入れられたか判定
-	if(Actual.cbBuffer < pRequest->cbBuffer)return E_FAIL;
+	if (Actual.cBuffers < pRequest->cBuffers
+			|| Actual.cbBuffer < pRequest->cbBuffer)
+		return E_FAIL;
 
 	return S_OK;
 }
 
 
-const bool CBonSrcPin::InputMedia(CMediaData *pMediaData)
+bool CBonSrcPin::InputMedia(CMediaData *pMediaData)
 {
-	for (int i=0;m_SrcStream.IsBufferFull();i++) {
-		if (i==100) {
+	for (int i = 0; m_SrcStream.IsBufferFull(); i++) {
+		if (i == 100) {
 			Flush();
 			return false;
 		}
 		::Sleep(10);
 	}
+
 	m_SrcStream.InputMedia(pMediaData);
 
 	return true;
 }
 
+
 void CBonSrcPin::Reset()
 {
 	m_SrcStream.Reset();
 }
+
 
 void CBonSrcPin::Flush()
 {
@@ -169,35 +202,42 @@ void CBonSrcPin::Flush()
 	DeliverEndFlush();
 }
 
+
 bool CBonSrcPin::EnableSync(bool bEnable)
 {
 	return m_SrcStream.EnableSync(bEnable);
 }
+
 
 bool CBonSrcPin::IsSyncEnabled() const
 {
 	return m_SrcStream.IsSyncEnabled();
 }
 
+
 void CBonSrcPin::SetVideoPID(WORD PID)
 {
 	m_SrcStream.SetVideoPID(PID);
 }
+
 
 void CBonSrcPin::SetAudioPID(WORD PID)
 {
 	m_SrcStream.SetAudioPID(PID);
 }
 
+
 unsigned int __stdcall CBonSrcPin::StreamThread(LPVOID lpParameter)
 {
-	CBonSrcPin *pThis=static_cast<CBonSrcPin*>(lpParameter);
+	CBonSrcPin *pThis = static_cast<CBonSrcPin*>(lpParameter);
 
 	TRACE(TEXT("CBonSrcPin::StreamThread() Start\n"));
 
 	::CoInitialize(NULL);
 
-	while (!pThis->m_bKillSignal) {
+	DWORD Wait = 0;
+
+	while (::WaitForSingleObject(pThis->m_hEndEvent, Wait) == WAIT_TIMEOUT) {
 		if (pThis->m_SrcStream.IsDataAvailable()) {
 			// 空のメディアサンプルを要求する
 			IMediaSample *pSample = NULL;
@@ -205,16 +245,19 @@ unsigned int __stdcall CBonSrcPin::StreamThread(LPVOID lpParameter)
 			if (SUCCEEDED(hr)) {
 				// 書き込み先ポインタを取得する
 				BYTE *pSampleData = NULL;
-				pSample->GetPointer(&pSampleData);
-				DWORD Size = SAMPLE_PACKETS;
-				if (pThis->m_SrcStream.GetData(pSampleData, &Size)) {
-					pSample->SetActualDataLength(Size * TS_PACKETSIZE);
-					pThis->Deliver(pSample);
+				hr = pSample->GetPointer(&pSampleData);
+				if (SUCCEEDED(hr)) {
+					DWORD Size = SAMPLE_PACKETS;
+					if (pThis->m_SrcStream.GetData(pSampleData, &Size)) {
+						pSample->SetActualDataLength(Size * TS_PACKETSIZE);
+						pThis->Deliver(pSample);
+					}
+					pSample->Release();
 				}
-				pSample->Release();
 			}
+			Wait = 0;
 		} else {
-			::Sleep(5);
+			Wait = 5;
 		}
 	}
 

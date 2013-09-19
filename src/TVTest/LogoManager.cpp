@@ -2,6 +2,7 @@
 #include "TVTest.h"
 #include "AppMain.h"
 #include "LogoManager.h"
+#include "HelperClass/NFile.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -12,7 +13,8 @@ static char THIS_FILE[]=__FILE__;
 
 #define MAX_LOGO_BYTES 1296
 
-#define PNG_SIGNATURE "\x89PNG\r\n\x1A\n"
+#define PNG_SIGNATURE		"\x89PNG\r\n\x1A\n"
+#define PNG_SIGNATURE_BYTES	8
 
 
 #include <pshpack1.h>
@@ -40,15 +42,26 @@ struct LogoFileHeader {
 };
 
 #define LOGOFILEHEADER_TYPE		"LogoData"
-#define LOGOFILEHEADER_VERSION	0
+#define LOGOFILEHEADER_VERSION	1
 
 struct LogoImageHeader {
-	WORD OriginalNetworkID;
+	WORD NetworkID;
 	WORD LogoID;
 	WORD LogoVersion;
 	BYTE LogoType;
 	BYTE Reserved;
 	WORD DataSize;
+};
+
+struct LogoImageHeader2 {
+	WORD NetworkID;
+	WORD LogoID;
+	WORD LogoVersion;
+	BYTE LogoType;
+	BYTE Reserved1;
+	WORD DataSize;
+	BYTE Reserved2[6];
+	ULONGLONG Time;
 };
 
 #include <poppack.h>
@@ -63,6 +76,32 @@ static int CompareLogoVersion(WORD Version1,WORD Version2)
 	if (Version1<=2047)
 		return 1;
 	return -1;
+}
+
+
+static ULONGLONG SystemTimeToUInt64(const SYSTEMTIME &Time)
+{
+	if (Time.wYear==0)
+		return 0;
+	FILETIME ft;
+	if (!::SystemTimeToFileTime(&Time,&ft))
+		return 0;
+	return (((ULONGLONG)ft.dwHighDateTime<<32) | ft.dwLowDateTime)/FILETIME_SECOND;
+}
+
+
+static SYSTEMTIME UInt64ToSystemTime(ULONGLONG Time)
+{
+	SYSTEMTIME st;
+	::ZeroMemory(&st,sizeof(st));
+	if (Time!=0) {
+		FILETIME ft;
+		Time*=FILETIME_SECOND;
+		ft.dwLowDateTime=(DWORD)(Time>>32);
+		ft.dwHighDateTime=(DWORD)(Time&0xFFFFFFFFUL);
+		::FileTimeToSystemTime(&ft,&st);
+	}
+	return st;
 }
 
 
@@ -152,45 +191,40 @@ bool CLogoManager::SaveLogoFile(LPCTSTR pszFileName)
 		}
 	}
 
-	HANDLE hFile=::CreateFile(pszFileName,GENERIC_WRITE,0,NULL,
-							  CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,NULL);
-	if (hFile==INVALID_HANDLE_VALUE)
-		return false;
+	CNFile File;
 
-	DWORD Write;
+	if (!File.Open(pszFileName,CNFile::CNF_WRITE | CNFile::CNF_NEW))
+		return false;
 
 	LogoFileHeader FileHeader;
 	::CopyMemory(FileHeader.Type,LOGOFILEHEADER_TYPE,8);
 	FileHeader.Version=LOGOFILEHEADER_VERSION;
 	FileHeader.NumImages=(DWORD)m_LogoMap.size();
-	if (!::WriteFile(hFile,&FileHeader,sizeof(FileHeader),&Write,NULL)
-			|| Write!=sizeof(FileHeader))
+	if (!File.Write(&FileHeader,sizeof(FileHeader)))
 		goto OnError;
 
 	for (LogoMap::const_iterator itr=m_LogoMap.begin();itr!=m_LogoMap.end();++itr) {
-		LogoImageHeader ImageHeader;
+		LogoImageHeader2 ImageHeader;
 
-		ImageHeader.OriginalNetworkID=itr->second->GetOriginalNetworkID();
+		::ZeroMemory(&ImageHeader,sizeof(ImageHeader));
+		ImageHeader.NetworkID=itr->second->GetNetworkID();
 		ImageHeader.LogoID=itr->second->GetLogoID();
 		ImageHeader.LogoVersion=itr->second->GetLogoVersion();
 		ImageHeader.LogoType=itr->second->GetLogoType();
-		ImageHeader.Reserved=0;
 		ImageHeader.DataSize=itr->second->GetDataSize();
+		ImageHeader.Time=SystemTimeToUInt64(itr->second->GetTime());
 		DWORD CRC=CCrcCalculator::CalcCrc32((const BYTE*)&ImageHeader,sizeof(ImageHeader));
 		CRC=CCrcCalculator::CalcCrc32(itr->second->GetData(),ImageHeader.DataSize,CRC);
-		if (!::WriteFile(hFile,&ImageHeader,sizeof(ImageHeader),&Write,NULL)
-					|| Write!=sizeof(ImageHeader)
-				|| !::WriteFile(hFile,itr->second->GetData(),ImageHeader.DataSize,&Write,NULL)
-					|| Write!=ImageHeader.DataSize
-				|| !::WriteFile(hFile,&CRC,sizeof(CRC),&Write,NULL)
-					|| Write!=sizeof(CRC))
+		if (!File.Write(&ImageHeader,sizeof(ImageHeader))
+				|| !File.Write(itr->second->GetData(),ImageHeader.DataSize)
+				|| !File.Write(&CRC,sizeof(CRC)))
 			goto OnError;
 	}
-	::CloseHandle(hFile);
+
 	return true;
 
 OnError:
-	::CloseHandle(hFile);
+	File.Close();
 	::DeleteFile(pszFileName);
 	return false;
 }
@@ -200,58 +234,58 @@ bool CLogoManager::LoadLogoFile(LPCTSTR pszFileName)
 {
 	CBlockLock Lock(&m_Lock);
 
-	HANDLE hFile=::CreateFile(pszFileName,GENERIC_READ,FILE_SHARE_READ,NULL,
-							  OPEN_EXISTING,FILE_FLAG_SEQUENTIAL_SCAN,NULL);
-	if (hFile==INVALID_HANDLE_VALUE)
-		return false;
+	CNFile File;
 
-	DWORD Read;
-
-	LogoFileHeader FileHeader;
-	if (!::ReadFile(hFile,&FileHeader,sizeof(FileHeader),&Read,NULL)
-			|| Read!=sizeof(FileHeader)
-			|| memcmp(FileHeader.Type,LOGOFILEHEADER_TYPE,8)!=0
-			|| FileHeader.Version!=LOGOFILEHEADER_VERSION
-			|| FileHeader.NumImages==0) {
-		::CloseHandle(hFile);
+	if (!File.Open(pszFileName,
+			CNFile::CNF_READ | CNFile::CNF_SHAREREAD | CNFile::CNF_SEQUENTIALREAD)) {
+		TRACE(TEXT("CLogoManager::LoadLogoFile() : File open error \"%s\"\n"),pszFileName);
 		return false;
 	}
 
-	BYTE *pBuffer=new BYTE[MAX_LOGO_BYTES];
-	for (DWORD i=0;i<FileHeader.NumImages;i++) {
-		LogoImageHeader ImageHeader;
+	LogoFileHeader FileHeader;
+	if (File.Read(&FileHeader,sizeof(FileHeader))!=sizeof(FileHeader)
+			|| std::memcmp(FileHeader.Type,LOGOFILEHEADER_TYPE,8)!=0
+			|| FileHeader.Version>LOGOFILEHEADER_VERSION
+			|| FileHeader.NumImages==0) {
+		TRACE(TEXT("CLogoManager::LoadLogoFile() : File header error\n"));
+		return false;
+	}
 
-		if (!::ReadFile(hFile,&ImageHeader,sizeof(ImageHeader),&Read,NULL)
-				|| Read!=sizeof(ImageHeader)
+	const DWORD ImageHeaderSize=
+		FileHeader.Version==0?sizeof(LogoImageHeader):sizeof(LogoImageHeader2);
+	BYTE Buffer[MAX_LOGO_BYTES];
+
+	for (DWORD i=0;i<FileHeader.NumImages;i++) {
+		LogoImageHeader2 ImageHeader;
+
+		if (File.Read(&ImageHeader,ImageHeaderSize)!=ImageHeaderSize
 				|| ImageHeader.LogoType>0x05
-				|| ImageHeader.Reserved!=0
-				|| ImageHeader.DataSize<=8
+				|| ImageHeader.DataSize<=PNG_SIGNATURE_BYTES
 				|| ImageHeader.DataSize>MAX_LOGO_BYTES) {
-			delete [] pBuffer;
-			::CloseHandle(hFile);
+			TRACE(TEXT("CLogoManager::LoadLogoFile() : Image header error\n"));
 			return false;
 		}
 
 		DWORD CRC;
-		if (!::ReadFile(hFile,pBuffer,ImageHeader.DataSize,&Read,NULL)
-					|| Read!=ImageHeader.DataSize
-				|| memcmp(pBuffer,PNG_SIGNATURE,8)!=0
-				|| !::ReadFile(hFile,&CRC,sizeof(CRC),&Read,NULL)
-					|| Read!=sizeof(CRC)
-				|| CRC!=CCrcCalculator::CalcCrc32(pBuffer,ImageHeader.DataSize,
-					CCrcCalculator::CalcCrc32((const BYTE*)&ImageHeader,sizeof(ImageHeader)))) {
-			delete [] pBuffer;
-			::CloseHandle(hFile);
+		if (File.Read(Buffer,ImageHeader.DataSize)!=ImageHeader.DataSize
+				|| std::memcmp(Buffer,PNG_SIGNATURE,PNG_SIGNATURE_BYTES)!=0
+				|| File.Read(&CRC,sizeof(CRC))!=sizeof(CRC)
+				|| CRC!=CCrcCalculator::CalcCrc32(Buffer,ImageHeader.DataSize,
+					CCrcCalculator::CalcCrc32((const BYTE*)&ImageHeader,ImageHeaderSize))) {
 			return false;
 		}
 
 		CLogoDownloader::LogoData Data;
-		Data.OriginalNetworkID=ImageHeader.OriginalNetworkID;
+		Data.OriginalNetworkID=ImageHeader.NetworkID;
 		Data.LogoID=ImageHeader.LogoID;
 		Data.LogoVersion=ImageHeader.LogoVersion;
 		Data.LogoType=ImageHeader.LogoType;
 		Data.DataSize=ImageHeader.DataSize;
-		Data.pData=pBuffer;
+		Data.pData=Buffer;
+		if (FileHeader.Version==0)
+			::ZeroMemory(&Data.Time,sizeof(SYSTEMTIME));
+		else
+			Data.Time=UInt64ToSystemTime(ImageHeader.Time);
 
 		ULONGLONG Key=GetMapKey(Data.OriginalNetworkID,Data.LogoID,Data.LogoType);
 		LogoMap::iterator itr=m_LogoMap.find(Key);
@@ -267,9 +301,9 @@ bool CLogoManager::LoadLogoFile(LPCTSTR pszFileName)
 			m_LogoMap.insert(std::pair<ULONGLONG,CLogoData*>(Key,pLogoData));
 		}
 	}
-	delete [] pBuffer;
-	::GetFileTime(hFile,NULL,NULL,&m_LogoFileLastWriteTime);
-	::CloseHandle(hFile);
+
+	File.GetTime(NULL,NULL,&m_LogoFileLastWriteTime);
+
 	return true;
 }
 
@@ -347,7 +381,7 @@ bool CLogoManager::LoadLogoIDMap(LPCTSTR pszFileName)
 }
 
 
-HBITMAP CLogoManager::GetLogoBitmap(WORD OriginalNetworkID,WORD LogoID,BYTE LogoType)
+HBITMAP CLogoManager::GetLogoBitmap(WORD NetworkID,WORD LogoID,BYTE LogoType)
 {
 	CBlockLock Lock(&m_Lock);
 
@@ -358,7 +392,7 @@ HBITMAP CLogoManager::GetLogoBitmap(WORD OriginalNetworkID,WORD LogoID,BYTE Logo
 		static const BYTE BigLogoPriority[] = {5, 3, 4, 2, 0, 1};
 		const BYTE *pPriority=LogoType==LOGOTYPE_SMALL?SmallLogoPriority:BigLogoPriority;
 		for (BYTE i=0;i<=5;i++) {
-			Key=GetMapKey(OriginalNetworkID,LogoID,pPriority[i]);
+			Key=GetMapKey(NetworkID,LogoID,pPriority[i]);
 			itr=m_LogoMap.find(Key);
 			if (itr!=m_LogoMap.end())
 				break;
@@ -366,11 +400,11 @@ HBITMAP CLogoManager::GetLogoBitmap(WORD OriginalNetworkID,WORD LogoID,BYTE Logo
 		if (itr==m_LogoMap.end())
 			LogoType=pPriority[0];
 	} else {
-		Key=GetMapKey(OriginalNetworkID,LogoID,LogoType);
+		Key=GetMapKey(NetworkID,LogoID,LogoType);
 		itr=m_LogoMap.find(Key);
 	}
 	if (itr==m_LogoMap.end()) {
-		CLogoData *pLogoData=LoadLogoData(OriginalNetworkID,LogoID,LogoType);
+		CLogoData *pLogoData=LoadLogoData(NetworkID,LogoID,LogoType);
 		if (pLogoData!=NULL) {
 			m_LogoMap.insert(std::pair<ULONGLONG,CLogoData*>(Key,pLogoData));
 			m_fLogoUpdated=true;
@@ -392,10 +426,10 @@ HBITMAP CLogoManager::GetAssociatedLogoBitmap(WORD NetworkID,WORD ServiceID,BYTE
 }
 
 
-const CGdiPlus::CImage *CLogoManager::GetLogoImage(WORD OriginalNetworkID,WORD LogoID,BYTE LogoType)
+const CGdiPlus::CImage *CLogoManager::GetLogoImage(WORD NetworkID,WORD LogoID,BYTE LogoType)
 {
 	CBlockLock Lock(&m_Lock);
-	ULONGLONG Key=GetMapKey(OriginalNetworkID,LogoID,LogoType);
+	ULONGLONG Key=GetMapKey(NetworkID,LogoID,LogoType);
 	LogoMap::iterator itr=m_LogoMap.find(Key);
 	if (itr==m_LogoMap.end())
 		return NULL;
@@ -458,7 +492,7 @@ DWORD CLogoManager::GetAvailableLogoType(WORD NetworkID,WORD ServiceID)
 }
 
 
-void CLogoManager::OnLogo(const CLogoDownloader::LogoData *pData)
+void CLogoManager::OnLogoDownloaded(const CLogoDownloader::LogoData *pData)
 {
 	// 透明なロゴは除外
 	if (pData->DataSize<=93)
@@ -472,19 +506,21 @@ void CLogoManager::OnLogo(const CLogoDownloader::LogoData *pData)
 	CLogoData *pLogoData;
 	if (itr!=m_LogoMap.end()) {
 		// バージョンが新しい場合のみ更新
-		if (CompareLogoVersion(itr->second->GetLogoVersion(),pData->LogoVersion)<0) {
+		int VerCmp=CompareLogoVersion(itr->second->GetLogoVersion(),pData->LogoVersion);
+		if (VerCmp<0
+				|| (VerCmp==0 && CompareSystemTime(&itr->second->GetTime(),&pData->Time)<0)) {
 			// BS/CSはバージョンが共通のため、データを比較して更新を確認する
 			if (pData->DataSize!=itr->second->GetDataSize()
-					|| ::memcmp(pData->pData,itr->second->GetData(),pData->DataSize)!=0) {
+					|| std::memcmp(pData->pData,itr->second->GetData(),pData->DataSize)!=0) {
 				pLogoData=new CLogoData(pData);
 				delete itr->second;
 				itr->second=pLogoData;
-				//m_LogoMap[Key]=pLogoData;
+				fUpdated=true;
 				fDataUpdated=true;
-			} else {
+			} else if (VerCmp<0) {
 				itr->second->SetLogoVersion(pData->LogoVersion);
+				fUpdated=true;
 			}
-			fUpdated=true;
 		}
 	} else {
 		pLogoData=new CLogoData(pData);
@@ -601,7 +637,7 @@ CLogoManager::CLogoData *CLogoManager::LoadLogoData(WORD NetworkID,WORD LogoID,B
 	DWORD Read;
 	if (!::ReadFile(hFile,pData,FileSize.LowPart,&Read,NULL)
 			|| Read!=FileSize.LowPart
-			|| memcmp(pData,PNG_SIGNATURE,8)!=0) {
+			|| std::memcmp(pData,PNG_SIGNATURE,PNG_SIGNATURE_BYTES)!=0) {
 		delete [] pData;
 		::CloseHandle(hFile);
 		return NULL;
@@ -614,6 +650,7 @@ CLogoManager::CLogoData *CLogoManager::LoadLogoData(WORD NetworkID,WORD LogoID,B
 	LogoData.LogoType=LogoType;
 	LogoData.DataSize=(WORD)Read;
 	LogoData.pData=pData;
+	::ZeroMemory(&LogoData.Time,sizeof(SYSTEMTIME));
 	CLogoData *pLogoData=new CLogoData(&LogoData);
 	delete [] pData;
 	return pLogoData;
@@ -623,11 +660,12 @@ CLogoManager::CLogoData *CLogoManager::LoadLogoData(WORD NetworkID,WORD LogoID,B
 
 
 CLogoManager::CLogoData::CLogoData(const CLogoDownloader::LogoData *pData)
-	: m_OriginalNetworkID(pData->OriginalNetworkID)
+	: m_NetworkID(pData->OriginalNetworkID)
 	, m_LogoID(pData->LogoID)
 	, m_LogoVersion(pData->LogoVersion)
 	, m_LogoType(pData->LogoType)
 	, m_DataSize(pData->DataSize)
+	, m_Time(pData->Time)
 	, m_hbm(NULL)
 {
 	m_pData=new BYTE[pData->DataSize];
@@ -659,13 +697,14 @@ CLogoManager::CLogoData &CLogoManager::CLogoData::operator=(const CLogoData &Src
 			m_hbm=NULL;
 		}
 		m_Image.Free();
-		m_OriginalNetworkID=Src.m_OriginalNetworkID;
+		m_NetworkID=Src.m_NetworkID;
 		m_LogoID=Src.m_LogoID;
 		m_LogoVersion=Src.m_LogoVersion;
 		m_LogoType=Src.m_LogoType;
 		m_DataSize=Src.m_DataSize;
 		m_pData=new BYTE[Src.m_DataSize];
 		::CopyMemory(m_pData,Src.m_pData,Src.m_DataSize);
+		m_Time=Src.m_Time;
 	}
 	return *this;
 }

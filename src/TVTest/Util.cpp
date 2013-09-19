@@ -467,6 +467,38 @@ bool CompareLogFont(const LOGFONT *pFont1,const LOGFONT *pFont2)
 }
 
 
+int PixelsToPoints(int Pixels)
+{
+	HDC hIC=::CreateIC(TEXT("DISPLAY"),NULL,NULL,NULL);
+	if (hIC==NULL)
+		return 0;
+	int Resolution=::GetDeviceCaps(hIC,LOGPIXELSY);
+	int Points;
+	if (Resolution!=0)
+		Points=::MulDiv(Pixels,72,Resolution);
+	else
+		Points=0;
+	::DeleteDC(hIC);
+	return Points;
+}
+
+
+int PointsToPixels(int Points)
+{
+	HDC hIC=::CreateIC(TEXT("DISPLAY"),NULL,NULL,NULL);
+	if (hIC==NULL)
+		return 0;
+	int Resolution=::GetDeviceCaps(hIC,LOGPIXELSY);
+	int Pixels;
+	if (Resolution!=0)
+		Pixels=::MulDiv(Points,Resolution,72);
+	else
+		Pixels=0;
+	::DeleteDC(hIC);
+	return Pixels;
+}
+
+
 int CalcFontPointHeight(HDC hdc,const LOGFONT *pFont)
 {
 	if (hdc==NULL || pFont==NULL)
@@ -486,7 +518,7 @@ int CalcFontPointHeight(HDC hdc,const LOGFONT *pFont)
 	DeleteObject(hfont);
 	if (PixelsPerInch==0)
 		return 0;
-	return ((tm.tmHeight-tm.tmInternalLeading)*72+PixelsPerInch/2)/PixelsPerInch;
+	return MulDiv(tm.tmHeight-tm.tmInternalLeading,72,PixelsPerInch);
 }
 
 
@@ -502,6 +534,61 @@ int GetErrorText(DWORD ErrorCode,LPTSTR pszText,int MaxLength)
 	if (Length==0)
 		pszText[0]=_T('\0');
 	return Length;
+}
+
+
+class CFileNameCompare
+{
+public:
+	CFileNameCompare()
+		: m_pCompareStringOrdinal(GET_MODULE_FUNCTION(TEXT("kernel32.dll"),CompareStringOrdinal))
+	{
+	}
+
+	bool IsEqual(LPCWSTR pString1,int Count1,LPCWSTR pString2,int Count2)
+	{
+		if (m_pCompareStringOrdinal!=NULL)
+			return m_pCompareStringOrdinal(pString1,Count1,pString2,Count2,TRUE)==CSTR_EQUAL;
+
+		if (Count1<0)
+			Count1=::lstrlenW(pString1);
+		if (Count2<0)
+			Count2=::lstrlenW(pString2);
+		if (Count1!=Count2)
+			return false;
+		bool fResult;
+		if (Count1<=MAX_PATH) {
+			WCHAR Buff1[MAX_PATH],Buff2[MAX_PATH];
+			::CopyMemory(Buff1,pString1,Count1*sizeof(WCHAR));
+			::CharUpperBuffW(Buff1,Count1);
+			::CopyMemory(Buff2,pString2,Count2*sizeof(WCHAR));
+			::CharUpperBuffW(Buff2,Count2);
+			fResult=std::wmemcmp(Buff1,Buff2,Count1)==0;
+		} else {
+			TVTest::String Buff1(pString1,Count1);
+			TVTest::String Buff2(pString2,Count2);
+			TVTest::StringUtility::ToUpper(Buff1);
+			TVTest::StringUtility::ToUpper(Buff2);
+			fResult=Buff1==Buff2;
+		}
+
+		return fResult;
+	}
+
+	bool IsEqual(LPCWSTR pszString1,LPCWSTR pszString2)
+	{
+		return IsEqual(pszString1,-1,pszString2,-1);
+	}
+
+private:
+	decltype(CompareStringOrdinal) *m_pCompareStringOrdinal;
+};
+
+static CFileNameCompare g_FileNameCompare;
+
+bool IsEqualFileName(LPCWSTR pszFileName1,LPCWSTR pszFileName2)
+{
+	return g_FileNameCompare.IsEqual(pszFileName1,pszFileName2);
 }
 
 

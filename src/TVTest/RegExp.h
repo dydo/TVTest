@@ -2,6 +2,10 @@
 #define TVTEST_REGEXP_H
 
 
+// std::regex ‘Î‰ž
+#define TVTEST_STD_REGEX_SUPPORT
+// VBScript RegExp ‘Î‰ž
+//#define TVTEST_VBSCRIPT_REGEXP_SUPPORT
 // bregonig.dll ‘Î‰ž
 #define TVTEST_BREGONIG_SUPPORT
 
@@ -52,6 +56,10 @@ namespace TVTest
 		virtual bool Match(LPCTSTR pText, size_t Length, CRegExp::TextRange *pRange) = 0;
 
 	protected:
+		bool NeedMap() const;
+		void MapPatternString();
+		void MapTargetString(String &Text) const;
+
 		String m_Pattern;
 		UINT m_Flags;
 	};

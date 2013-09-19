@@ -42,6 +42,7 @@ public:
 	bool GetPseudoOSD() const { return m_fPseudoOSD; }
 	COLORREF GetTextColor() const { return m_TextColor; }
 	int GetOpacity() const { return m_Opacity; }
+	const LOGFONT *GetOSDFont() const { return &m_OSDFont; }
 	int GetFadeTime() const { return m_FadeTime; }
 	ChannelChangeType GetChannelChangeType() const { return m_ChannelChangeType; }
 	bool GetLayeredWindow() const;
@@ -58,6 +59,8 @@ private:
 // CBasicDialog
 	INT_PTR DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam) override;
 
+	static UINT_PTR CALLBACK ChooseFontHookProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam);
+
 	void EnableNotify(unsigned int Type,bool fEnabled);
 
 	bool m_fShowOSD;
@@ -65,6 +68,8 @@ private:
 	COLORREF m_TextColor;
 	COLORREF m_CurTextColor;
 	int m_Opacity;
+	LOGFONT m_OSDFont;
+	LOGFONT m_CurOSDFont;
 	int m_FadeTime;
 	ChannelChangeType m_ChannelChangeType;
 	unsigned int m_EnabledOSD;

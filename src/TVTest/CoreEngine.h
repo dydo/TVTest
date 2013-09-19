@@ -66,7 +66,6 @@ public:
 	bool OpenCasCard();
 	bool CloseCasCard();
 	bool IsCasCardOpen() const;
-	bool IsDriverCardReader() const;
 	bool SetDescramble(bool fDescramble);
 	bool GetDescramble() const { return m_fDescramble; }
 	bool SetCasDevice(int Device,LPCTSTR pszName=NULL);
@@ -98,8 +97,8 @@ public:
 	int GetAutoStereoMode() const { return m_AutoStereoMode; }
 	bool SetDownMixSurround(bool fDownMix);
 	bool GetDownMixSurround() const { return m_fDownMixSurround; }
-	bool SetSpdifOptions(const CAacDecFilter::SpdifOptions &Options);
-	bool GetSpdifOptions(CAacDecFilter::SpdifOptions *pOptions) const;
+	bool SetSpdifOptions(const CAudioDecFilter::SpdifOptions &Options);
+	bool GetSpdifOptions(CAudioDecFilter::SpdifOptions *pOptions) const;
 
 	enum {
 		STATUS_VIDEOSIZE			=0x00000001UL,
@@ -168,7 +167,7 @@ private:
 	int m_StereoMode;
 	int m_AutoStereoMode;
 	bool m_fDownMixSurround;
-	CAacDecFilter::SpdifOptions m_SpdifOptions;
+	CAudioDecFilter::SpdifOptions m_SpdifOptions;
 	bool m_fSpdifPassthrough;
 	WORD m_EventID;
 	DWORD m_ErrorPacketCount;

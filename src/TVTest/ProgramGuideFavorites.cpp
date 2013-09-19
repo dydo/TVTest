@@ -93,14 +93,17 @@ void CProgramGuideFavorites::FavoriteInfo::SetDefaultColors()
 		SPACE_FAVORITES   = 0x8U
 	};
 	unsigned int Space=0;
+	LPCTSTR pszLabel=Label.c_str();
 
-	if (::StrStr(Label.c_str(),TEXT("地"))!=0)
+	if (::StrStr(pszLabel,TEXT("地"))!=0
+			|| ::StrStrI(pszLabel,TEXT("UHF"))!=0
+			|| ::StrStrI(pszLabel,TEXT("VHF"))!=0)
 		Space|=SPACE_TERRESTRIAL;
-	if (::StrStr(Label.c_str(),TEXT("BS"))!=0)
+	if (::StrStr(pszLabel,TEXT("BS"))!=0)
 		Space|=SPACE_BS;
-	if (::StrStr(Label.c_str(),TEXT("CS"))!=0)
+	if (::StrStr(pszLabel,TEXT("CS"))!=0)
 		Space|=SPACE_CS;
-	if (::StrStr(Label.c_str(),TEXT("お気に入り"))!=0)
+	if (::StrStr(pszLabel,TEXT("お気に入り"))!=0)
 		Space|=SPACE_FAVORITES;
 
 	switch (Space) {

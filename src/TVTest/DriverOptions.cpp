@@ -191,7 +191,7 @@ int CDriverSettingList::Find(LPCTSTR pszFileName) const
 	if (pszFileName==NULL)
 		return -1;
 	for (size_t i=0;i<m_SettingList.size();i++) {
-		if (::lstrcmpi(m_SettingList[i]->GetFileName(),pszFileName)==0)
+		if (IsEqualFileName(m_SettingList[i]->GetFileName(),pszFileName))
 			return (int)i;
 	}
 	return -1;
@@ -474,8 +474,8 @@ void CDriverOptions::InitDlgItem(int Driver)
 		EnableDlgItems(m_hDlg,IDC_DRIVEROPTIONS_INITCHANNEL_SPACE,
 							  IDC_DRIVEROPTIONS_INITCHANNEL_CHANNEL,
 					InitChannelType==CDriverSettings::INITIALCHANNEL_CUSTOM);
-		bool fCur=::lstrcmpi(pszFileName,
-			::PathFindFileName(GetAppClass().GetCoreEngine()->GetDriverFileName()))==0;
+		bool fCur=IsEqualFileName(pszFileName,
+			::PathFindFileName(GetAppClass().GetCoreEngine()->GetDriverFileName()));
 		if (fCur || pDriverInfo->LoadTuningSpaceList(CDriverInfo::LOADTUNINGSPACE_USEDRIVER_NOOPEN)) {
 			const CTuningSpaceList *pTuningSpaceList;
 			int NumSpaces,i;
@@ -564,8 +564,9 @@ void CDriverOptions::SetChannelList(int Driver)
 		DlgComboBox_GetItemData(m_hDlg,IDC_DRIVEROPTIONS_DRIVERLIST,Driver));
 	if (pSettings==NULL)
 		return;
-	bool fCur=::lstrcmpi(pSettings->GetFileName(),
-						 ::PathFindFileName(GetAppClass().GetCoreEngine()->GetDriverFileName()))==0;
+	bool fCur=IsEqualFileName(
+		pSettings->GetFileName(),
+		::PathFindFileName(GetAppClass().GetCoreEngine()->GetDriverFileName()));
 	const CDriverInfo *pDriverInfo;
 	int i;
 

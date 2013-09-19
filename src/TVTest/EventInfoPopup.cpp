@@ -91,50 +91,6 @@ void CEventInfoPopup::SetEventInfo(const CEventInfoData *pEventInfo)
 
 	m_EventInfo=*pEventInfo;
 
-	LPCTSTR pszVideo=EpgUtil::GetVideoComponentTypeText(m_EventInfo.m_VideoInfo.ComponentType);
-
-	LPCTSTR pszAudio=NULL;
-	TCHAR szAudioComponent[64];
-	szAudioComponent[0]=_T('\0');
-	if (m_EventInfo.m_AudioList.size()>0) {
-		// TODO:複数音声対応
-		const CEventInfoData::AudioInfo *pAudioInfo=m_EventInfo.GetMainAudioInfo();
-		bool fBilingual=false;
-
-		if (pAudioInfo->ComponentType==0x02
-				&& pAudioInfo->bESMultiLingualFlag
-				&& pAudioInfo->LanguageCode!=pAudioInfo->LanguageCode2) {
-			pszAudio=TEXT("Mono 二カ国語");
-			fBilingual=true;
-		} else {
-			pszAudio=EpgUtil::GetAudioComponentTypeText(pAudioInfo->ComponentType);
-		}
-
-		LPCTSTR p=pAudioInfo->szText;
-		if (*p!=_T('\0')) {
-			szAudioComponent[0]=_T(' ');
-			szAudioComponent[1]=_T('[');
-			size_t i;
-			for (i=2;*p!=_T('\0') && i<lengthof(szAudioComponent)-2;i++) {
-				if (*p==_T('\r') || *p==_T('\n')) {
-					szAudioComponent[i]=_T('/');
-					p++;
-					if (*p==_T('\n'))
-						p++;
-				} else {
-					szAudioComponent[i]=*p++;
-				}
-			}
-			szAudioComponent[i+0]=_T(']');
-			szAudioComponent[i+1]=_T('\0');
-		} else if (fBilingual) {
-			StdUtil::snprintf(szAudioComponent,lengthof(szAudioComponent),
-							  TEXT(" [%s/%s]"),
-							  EpgUtil::GetLanguageText(pAudioInfo->LanguageCode),
-							  EpgUtil::GetLanguageText(pAudioInfo->LanguageCode2));
-		}
-	}
-
 	TCHAR szText[4096];
 	CStaticStringFormatter Formatter(szText,lengthof(szText));
 
@@ -149,13 +105,34 @@ void CEventInfoPopup::SetEventInfo(const CEventInfoData *pEventInfo)
 		Formatter.RemoveTrailingWhitespace();
 	}
 
-	if (pszVideo!=NULL || pszAudio!=NULL) {
-		if (!Formatter.IsEmpty())
-			Formatter.Append(TEXT("\r\n\r\n"));
-		Formatter.AppendFormat(TEXT("■ 映像: %s\r\n■ 音声: %s%s"),
-							   pszVideo!=NULL?pszVideo:TEXT("?"),
-							   pszAudio!=NULL?pszAudio:TEXT("?"),
-							   szAudioComponent);
+	Formatter.Append(TEXT("\r\n"));
+
+	LPCTSTR pszVideo=EpgUtil::GetVideoComponentTypeText(m_EventInfo.m_VideoInfo.ComponentType);
+	if (pszVideo!=NULL) {
+		Formatter.AppendFormat(TEXT("\r\n■ 映像： %s"),pszVideo);
+	}
+
+	if (!m_EventInfo.m_AudioList.empty()) {
+		const CEventInfoData::AudioInfo *pMainAudioInfo=m_EventInfo.GetMainAudioInfo();
+		TCHAR szBuff[64];
+
+		Formatter.Append(TEXT("\r\n■ 音声： "));
+		if (m_EventInfo.m_AudioList.size()==1) {
+			FormatAudioInfo(pMainAudioInfo,szBuff,lengthof(szBuff));
+			Formatter.Append(szBuff);
+		} else {
+			Formatter.Append(TEXT("主: "));
+			FormatAudioInfo(pMainAudioInfo,szBuff,lengthof(szBuff));
+			Formatter.Append(szBuff);
+			for (size_t i=0;i<m_EventInfo.m_AudioList.size();i++) {
+				const CEventInfoData::AudioInfo *pAudioInfo=&m_EventInfo.m_AudioList[i];
+				if (pAudioInfo!=pMainAudioInfo) {
+					Formatter.Append(TEXT(" / 副: "));
+					FormatAudioInfo(pAudioInfo,szBuff,lengthof(szBuff));
+					Formatter.Append(szBuff);
+				}
+			}
+		}
 	}
 
 	for (int i=0;i<m_EventInfo.m_ContentNibble.NibbleCount;i++) {
@@ -163,7 +140,7 @@ void CEventInfoPopup::SetEventInfo(const CEventInfoData *pEventInfo)
 			CEpgGenre EpgGenre;
 			LPCTSTR pszGenre=EpgGenre.GetText(m_EventInfo.m_ContentNibble.NibbleList[i].ContentNibbleLevel1,-1);
 			if (pszGenre!=NULL) {
-				Formatter.AppendFormat(TEXT("\r\n■ ジャンル: %s"),pszGenre);
+				Formatter.AppendFormat(TEXT("\r\n■ ジャンル： %s"),pszGenre);
 				pszGenre=EpgGenre.GetText(
 					m_EventInfo.m_ContentNibble.NibbleList[i].ContentNibbleLevel1,
 					m_EventInfo.m_ContentNibble.NibbleList[i].ContentNibbleLevel2);
@@ -175,7 +152,7 @@ void CEventInfoPopup::SetEventInfo(const CEventInfoData *pEventInfo)
 	}
 
 	if (m_fDetailInfo) {
-		Formatter.AppendFormat(TEXT("\r\n■ イベントID: 0x%04X"),m_EventInfo.m_EventID);
+		Formatter.AppendFormat(TEXT("\r\n■ イベントID： 0x%04X"),m_EventInfo.m_EventID);
 		if (m_EventInfo.m_fCommonEvent)
 			Formatter.AppendFormat(TEXT(" (イベント共有 サービスID 0x%04X / イベントID 0x%04X)"),
 								   m_EventInfo.m_CommonEventInfo.ServiceID,
@@ -192,7 +169,8 @@ void CEventInfoPopup::SetEventInfo(const CEventInfoData *pEventInfo)
 	::ReleaseDC(m_hwndEdit,hdc);
 	::SendMessage(m_hwndEdit,WM_SETREDRAW,FALSE,0);
 	::SetWindowText(m_hwndEdit,NULL);
-	CRichEditUtil::AppendText(m_hwndEdit,Formatter.GetString(),&cf);
+	CRichEditUtil::AppendText(m_hwndEdit,
+		SkipLeadingWhitespace(Formatter.GetString()),&cf);
 	CRichEditUtil::DetectURL(m_hwndEdit,&cf);
 	POINT pt={0,0};
 	::SendMessage(m_hwndEdit,EM_SETSCROLLPOS,0,reinterpret_cast<LPARAM>(&pt));
@@ -204,6 +182,53 @@ void CEventInfoPopup::SetEventInfo(const CEventInfoData *pEventInfo)
 	GetClientRect(&rc);
 	::MoveWindow(m_hwndEdit,0,m_TitleHeight,rc.right,max(rc.bottom-m_TitleHeight,0),TRUE);
 	Invalidate();
+}
+
+
+void CEventInfoPopup::FormatAudioInfo(
+	const CEventInfoData::AudioInfo *pAudioInfo,LPTSTR pszText,int MaxLength) const
+{
+	LPCTSTR pszAudio;
+	bool fBilingual=false;
+
+	if (pAudioInfo->ComponentType==0x02
+			&& pAudioInfo->bESMultiLingualFlag
+			&& pAudioInfo->LanguageCode!=pAudioInfo->LanguageCode2) {
+		pszAudio=TEXT("Mono 二カ国語");
+		fBilingual=true;
+	} else {
+		pszAudio=EpgUtil::GetAudioComponentTypeText(pAudioInfo->ComponentType);
+	}
+
+	LPCTSTR p=pAudioInfo->szText;
+	TCHAR szAudioComponent[64];
+	szAudioComponent[0]=_T('\0');
+	if (*p!=_T('\0')) {
+		szAudioComponent[0]=_T(' ');
+		szAudioComponent[1]=_T('[');
+		size_t i;
+		for (i=2;*p!=_T('\0') && i<lengthof(szAudioComponent)-2;i++) {
+			if (*p==_T('\r') || *p==_T('\n')) {
+				szAudioComponent[i]=_T('/');
+				p++;
+				if (*p==_T('\n'))
+					p++;
+			} else {
+				szAudioComponent[i]=*p++;
+			}
+		}
+		szAudioComponent[i+0]=_T(']');
+		szAudioComponent[i+1]=_T('\0');
+	} else if (fBilingual) {
+		StdUtil::snprintf(szAudioComponent,lengthof(szAudioComponent),
+						  TEXT(" [%s/%s]"),
+						  EpgUtil::GetLanguageText(pAudioInfo->LanguageCode),
+						  EpgUtil::GetLanguageText(pAudioInfo->LanguageCode2));
+	}
+
+	StdUtil::snprintf(pszText,MaxLength,TEXT("%s%s"),
+					  pszAudio!=NULL?pszAudio:TEXT("?"),
+					  szAudioComponent);
 }
 
 

@@ -42,7 +42,7 @@ bool CChannelHistory::SetCurrentChannel(LPCTSTR pszDriverName,const CChannelInfo
 	if (m_CurrentChannel>=0) {
 		const CChannel *pCurChannel=m_ChannelList[m_CurrentChannel];
 
-		if (::lstrcmpi(pCurChannel->GetDriverFileName(),pszDriverName)==0
+		if (IsEqualFileName(pCurChannel->GetDriverFileName(),pszDriverName)
 				&& pCurChannel->GetChannelIndex()==pChannelInfo->GetChannelIndex()
 				&& pCurChannel->GetNetworkID()==pChannelInfo->GetNetworkID()
 				&& pCurChannel->GetTransportStreamID()==pChannelInfo->GetTransportStreamID()
@@ -133,7 +133,7 @@ bool CRecentChannelList::Add(LPCTSTR pszDriverName,const CChannelInfo *pChannelI
 
 	std::deque<CChannel*>::iterator itr;
 	for (itr=m_ChannelList.begin();itr!=m_ChannelList.end();++itr) {
-		if (::lstrcmpi((*itr)->GetDriverFileName(),pszDriverName)==0
+		if (IsEqualFileName((*itr)->GetDriverFileName(),pszDriverName)
 				&& (*itr)->GetSpace()==pChannelInfo->GetSpace()
 				&& (*itr)->GetChannelIndex()==pChannelInfo->GetChannelIndex()
 				&& (*itr)->GetServiceID()==pChannelInfo->GetServiceID()) {

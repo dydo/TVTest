@@ -116,6 +116,8 @@ public:
 	bool Create(HWND hwndOwner,CBasicViewer *pViewer);
 	void ShowPanel(bool fShow);
 	bool IsPanelVisible() const { return m_fShowPanel; }
+	bool SetPanelWidth(int Width);
+	int GetPanelWidth() const { return m_PanelWidth; }
 	void OnRButtonDown();
 	void OnMButtonDown();
 	void OnMouseMove();
@@ -330,7 +332,6 @@ private:
 		CDisplayBaseEventHandler(CMainWindow *pMainWindow);
 	};
 	CDisplayBaseEventHandler m_DisplayBaseEventHandler;
-	friend CDisplayBaseEventHandler;
 
 	struct ChannelNoInputInfo {
 		bool fInputting;

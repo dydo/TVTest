@@ -92,7 +92,7 @@ bool CDriverInfo::LoadTuningSpaceList(LoadTuningSpaceListMode Mode)
 			TCHAR szCurDriverPath[MAX_PATH];
 
 			if (App.GetCoreEngine()->GetDriverPath(szCurDriverPath,lengthof(szCurDriverPath))
-					&& ::lstrcmpi(szFilePath,szCurDriverPath)==0) {
+					&& IsEqualFileName(szFilePath,szCurDriverPath)) {
 				m_DriverSpaceList=*App.GetChannelManager()->GetDriverTuningSpaceList();
 				m_fDriverSpaceLoaded=true;
 			}
@@ -250,7 +250,7 @@ int CDriverManager::FindByFileName(LPCTSTR pszFileName) const
 	if (IsStringEmpty(pszFileName))
 		return -1;
 	for (size_t i=0;i<m_DriverList.size();i++) {
-		if (::lstrcmpi(m_DriverList[i]->GetFileName(),pszFileName)==0)
+		if (IsEqualFileName(m_DriverList[i]->GetFileName(),pszFileName))
 			return (int)i;
 	}
 	return -1;

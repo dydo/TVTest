@@ -1321,7 +1321,7 @@ bool CTsAnalyzer::GetTotTime(SYSTEMTIME *pTime)
 
 	CBlockLock Lock(&m_DecoderLock);
 
-	const CTotTable *pTotTable = dynamic_cast<const CTotTable*>(m_PidMapManager.GetMapTarget(0x0014));
+	const CTotTable *pTotTable = dynamic_cast<const CTotTable*>(m_PidMapManager.GetMapTarget(PID_TOT));
 	if (pTotTable)
 		return pTotTable->GetDateTime(pTime);
 	return false;

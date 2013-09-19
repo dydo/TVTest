@@ -2,11 +2,17 @@
 #include "TVTest.h"
 #include "RegExp.h"
 
-#import "RegExp.tlb" no_namespace named_guids 
+#ifdef TVTEST_STD_REGEX_SUPPORT
+#include <regex>
+#endif
+
+#ifdef TVTEST_VBSCRIPT_REGEXP_SUPPORT
+#import "RegExp.tlb" no_namespace named_guids
+#endif
 
 #ifdef TVTEST_BREGONIG_SUPPORT
 #include "bregexp.h"
-#endif TVTEST_BREGONIG_SUPPORT
+#endif
 
 
 #ifdef _DEBUG
@@ -19,13 +25,16 @@ static char THIS_FILE[]=__FILE__;
 namespace TVTest
 {
 
-	inline void CharToHalfWidth(WCHAR &Char)
+	inline bool CharToHalfWidth(WCHAR &Char)
 	{
 		if (Char >= L'！' && Char <= L'～') {
 			Char -= L'！' - L'!';
 		} else if (Char == L'　') {
 			Char = L' ';
+		} else {
+			return false;
 		}
+		return true;
 	}
 
 
@@ -67,7 +76,175 @@ namespace TVTest
 	}
 
 
+	bool CRegExpEngine::NeedMap() const
+	{
+		return (m_Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0;
+	}
 
+
+	void CRegExpEngine::MapPatternString()
+	{
+		if ((m_Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0) {
+			for (size_t i = 0; i < m_Pattern.length(); i++) {
+				if (m_Pattern[i] == L'\\') {
+					i++;
+				} else if (CharToHalfWidth(m_Pattern[i])) {
+					// 記号をエスケープ
+					WCHAR c = m_Pattern[i];
+					if ((c >= L'!' && c <= L'/')
+							|| (c >= L':' && c <= L'?')
+							|| (c >= L'[' && c <= L'^')
+							|| (c >= L'{' && c <= L'}')) {
+						m_Pattern.insert(i, 1, L'\\');
+						i++;
+					}
+				}
+			}
+		}
+	}
+
+
+	void CRegExpEngine::MapTargetString(String &Text) const
+	{
+		if (Text.empty())
+			return;
+
+		if ((m_Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0)
+			StringToHalfWidth(Text);
+	}
+
+
+
+
+#ifdef TVTEST_STD_REGEX_SUPPORT
+
+	/*
+		std::regex を使った正規表現検索
+	*/
+
+	class CRegExpEngine_ECMAScript : public CRegExpEngine
+	{
+	public:
+		CRegExpEngine_ECMAScript();
+		~CRegExpEngine_ECMAScript();
+		bool GetName(LPTSTR pszName, size_t MaxLength) const override;
+		bool Initialize() override;
+		void Finalize() override;
+		bool IsInitialized() const override;
+		bool SetPattern(LPCTSTR pszPattern, UINT Flags) override;
+		bool Match(LPCTSTR pText, size_t Length, CRegExp::TextRange *pRange) override;
+
+	private:
+		typedef std::basic_regex<TCHAR> RegEx;
+		RegEx m_RegEx;
+		bool m_fInitialized;
+	};
+
+
+	CRegExpEngine_ECMAScript::CRegExpEngine_ECMAScript()
+		: m_fInitialized(false)
+	{
+	}
+
+
+	CRegExpEngine_ECMAScript::~CRegExpEngine_ECMAScript()
+	{
+		Finalize();
+	}
+
+
+	bool CRegExpEngine_ECMAScript::GetName(LPTSTR pszName, size_t MaxLength) const
+	{
+		if (pszName == NULL)
+			return false;
+
+		StdUtil::strncpy(pszName, MaxLength, TEXT("ECMAScript"));
+
+		return true;
+	}
+
+
+	bool CRegExpEngine_ECMAScript::Initialize()
+	{
+		m_fInitialized = true;
+
+		return true;
+	}
+
+
+	void CRegExpEngine_ECMAScript::Finalize()
+	{
+		m_fInitialized = false;
+	}
+
+
+	bool CRegExpEngine_ECMAScript::IsInitialized() const
+	{
+		return m_fInitialized;
+	}
+
+
+	bool CRegExpEngine_ECMAScript::SetPattern(LPCTSTR pszPattern, UINT Flags)
+	{
+		if (IsStringEmpty(pszPattern))
+			return false;
+
+		m_Pattern = pszPattern;
+		m_Flags = Flags;
+		MapPatternString();
+
+		RegEx::flag_type RegExFlags = std::regex_constants::ECMAScript;
+		if (Flags & CRegExp::FLAG_IGNORE_CASE)
+			RegExFlags |= std::regex_constants::icase;
+
+		try {
+			m_RegEx.assign(m_Pattern, RegExFlags);
+#ifdef _DEBUG
+		} catch (std::regex_error &e) {
+			TRACE(TEXT("std::regex::assign() error %d\n"), e.code());
+#else
+		} catch (...) {
+#endif
+			return false;
+		}
+
+		return true;
+	}
+
+
+	bool CRegExpEngine_ECMAScript::Match(LPCTSTR pText, size_t Length, CRegExp::TextRange *pRange)
+	{
+		if (m_Pattern.empty())
+			return false;
+		if (pText == NULL)
+			return false;
+
+		String Text(pText, Length);
+
+		MapTargetString(Text);
+
+		std::match_results<String::const_iterator> Results;
+		if (!std::regex_search(Text, Results, m_RegEx))
+			return false;
+
+		if (pRange != NULL) {
+			pRange->Start = Results.position();
+			pRange->Length = Results.length();
+		}
+
+		return true;
+	}
+
+#endif	// TVTEST_STD_REGEX_SUPPORT
+
+
+
+
+#ifdef TVTEST_VBSCRIPT_REGEXP_SUPPORT
+
+	/*
+		VBScript の RegExp オブジェクトを使った正規表現検索
+	*/
 
 	class CRegExpEngine_VBScript : public CRegExpEngine
 	{
@@ -82,8 +259,6 @@ namespace TVTest
 		bool Match(LPCTSTR pText, size_t Length, CRegExp::TextRange *pRange) override;
 
 	private:
-		void MapString(String &Text, UINT Flags) const;
-
 		IRegExpPtr m_pRegExp;
 	};
 
@@ -104,7 +279,7 @@ namespace TVTest
 		if (pszName == NULL)
 			return false;
 
-		StdUtil::strncpy(pszName, MaxLength, TEXT("VBScript RegExp"));
+		StdUtil::strncpy(pszName, MaxLength, TEXT("VBScript"));
 
 		return true;
 	}
@@ -144,9 +319,7 @@ namespace TVTest
 
 		m_Pattern = pszPattern;
 		m_Flags = Flags;
-
-		if ((Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0)
-			MapString(m_Pattern, Flags);
+		MapPatternString();
 
 		try {
 			_bstr_t Pattern(m_Pattern.c_str());
@@ -170,8 +343,7 @@ namespace TVTest
 
 		String Text(pText, Length);
 
-		if ((m_Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0)
-			MapString(Text, m_Flags);
+		MapTargetString(Text);
 
 		try {
 			_bstr_t Target(Text.c_str());
@@ -192,15 +364,7 @@ namespace TVTest
 		return true;
 	}
 
-
-	void CRegExpEngine_VBScript::MapString(String &Text, UINT Flags) const
-	{
-		if (Text.empty())
-			return;
-
-		if ((m_Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0)
-			StringToHalfWidth(Text);
-	}
+#endif	// TVTEST_VBSCRIPT_REGEXP_SUPPORT
 
 
 
@@ -331,8 +495,7 @@ namespace TVTest
 		m_Pattern = pszPattern;
 		m_Flags = Flags;
 
-		if ((Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0)
-			StringToHalfWidth(m_Pattern);
+		MapPatternString();
 
 		return true;
 	}
@@ -355,26 +518,12 @@ namespace TVTest
 		LPCTSTR pSrcText = pText;
 		size_t SrcLength = Length;
 
-		LPTSTR pMapText = NULL;
+		String MapText;
 
-		if ((m_Flags & CRegExp::FLAG_IGNORE_WIDTH) != 0 && Length > 0) {
-#if 0
-			int MapLength = ::LCMapString(LOCALE_USER_DEFAULT, LCMAP_HALFWIDTH, pText, (int)Length, NULL, 0);
-			if (MapLength > 0) {
-				pMapText = new TCHAR[MapLength];
-				::LCMapString(LOCALE_USER_DEFAULT, LCMAP_HALFWIDTH, pText, (int)Length, pMapText, MapLength);
-				pSrcText = pMapText;
-				SrcLength = MapLength;
-			}
-#else
-			pMapText = new WCHAR[Length];
-			::CopyMemory(pMapText, pText, Length * sizeof(WCHAR));
-
-			for (size_t i = 0; i < Length; i++)
-				CharToHalfWidth(pMapText[i]);
-
-			pSrcText = pMapText;
-#endif
+		if (NeedMap()) {
+			MapText = pText;
+			MapTargetString(MapText);
+			pSrcText = MapText.c_str();
 		}
 
 		TCHAR szMessage[BREGEXP_MAX_ERROR_MESSAGE_LEN];
@@ -383,10 +532,6 @@ namespace TVTest
 								(m_Flags & CRegExp::FLAG_IGNORE_CASE) ? TEXT("i") : NULL,
 								pSrcText, pSrcText, pSrcText + SrcLength,
 								FALSE, &m_pBRegExp, szMessage);
-
-		if (pMapText != NULL)
-			delete [] pMapText;
-
 		if (Result <= 0)
 			return false;
 
@@ -442,23 +587,33 @@ namespace TVTest
 
 	bool CRegExp::Initialize()
 	{
-		if (m_pEngine == NULL) {
+		if (m_pEngine != NULL)
+			return true;
+
 #ifdef TVTEST_BREGONIG_SUPPORT
-			if (CRegExpEngine_Bregonig::IsAvailable()) {
-				m_pEngine = new CRegExpEngine_Bregonig;
-			} else
-#endif
-			{
-				m_pEngine = new CRegExpEngine_VBScript;
-			}
-
-			if (!m_pEngine->Initialize()) {
-				Finalize();
-				return false;
-			}
+		if (CRegExpEngine_Bregonig::IsAvailable()) {
+			m_pEngine = new CRegExpEngine_Bregonig;
+			if (m_pEngine->Initialize())
+				return true;
+			Finalize();
 		}
+#endif
 
-		return true;
+#ifdef TVTEST_VBSCRIPT_REGEXP_SUPPORT
+		m_pEngine = new CRegExpEngine_VBScript;
+		if (m_pEngine->Initialize())
+			return true;
+		Finalize();
+#endif
+
+#ifdef TVTEST_STD_REGEX_SUPPORT
+		m_pEngine = new CRegExpEngine_ECMAScript;
+		if (m_pEngine->Initialize())
+			return true;
+		Finalize();
+#endif
+
+		return false;
 	}
 
 

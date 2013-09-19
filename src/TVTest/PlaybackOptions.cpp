@@ -16,7 +16,7 @@ static char THIS_FILE[]=__FILE__;
 
 
 CPlaybackOptions::CPlaybackOptions()
-	: m_SpdifOptions(CAacDecFilter::SPDIF_MODE_DISABLED,CAacDecFilter::SPDIF_CHANNELS_SURROUND)
+	: m_SpdifOptions(CAudioDecFilter::SPDIF_MODE_DISABLED,CAudioDecFilter::SPDIF_CHANNELS_SURROUND)
 	, m_fDownMixSurround(true)
 	, m_fRestoreMute(false)
 	, m_fMute(false)
@@ -94,7 +94,7 @@ bool CPlaybackOptions::ReadSettings(CSettings &Settings)
 	if (Settings.Read(TEXT("AudioFilter"),szAudioFilter,lengthof(szAudioFilter)))
 		m_AudioFilterName.Set(szAudioFilter);
 	if (Settings.Read(TEXT("SpdifMode"),&Value))
-		m_SpdifOptions.Mode=(CAacDecFilter::SpdifMode)Value;
+		m_SpdifOptions.Mode=(CAudioDecFilter::SpdifMode)Value;
 	Settings.Read(TEXT("SpdifChannels"),&m_SpdifOptions.PassthroughChannels);
 	Settings.Read(TEXT("DownMixSurround"),&m_fDownMixSurround);
 	Settings.Read(TEXT("RestoreMute"),&m_fRestoreMute);
@@ -151,7 +151,7 @@ bool CPlaybackOptions::Create(HWND hwndOwner)
 }
 
 
-bool CPlaybackOptions::SetSpdifOptions(const CAacDecFilter::SpdifOptions &Options)
+bool CPlaybackOptions::SetSpdifOptions(const CAudioDecFilter::SpdifOptions &Options)
 {
 	m_SpdifOptions=Options;
 	return true;
@@ -222,15 +222,15 @@ INT_PTR CPlaybackOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lPara
 				DlgComboBox_AddString(hDlg,IDC_OPTIONS_SPDIFMODE,SpdifModeList[i]);
 			DlgComboBox_SetCurSel(hDlg,IDC_OPTIONS_SPDIFMODE,(int)m_SpdifOptions.Mode);
 			DlgCheckBox_Check(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_MONO,
-							  (m_SpdifOptions.PassthroughChannels&CAacDecFilter::SPDIF_CHANNELS_MONO)!=0);
+							  (m_SpdifOptions.PassthroughChannels&CAudioDecFilter::SPDIF_CHANNELS_MONO)!=0);
 			DlgCheckBox_Check(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_DUALMONO,
-							  (m_SpdifOptions.PassthroughChannels&CAacDecFilter::SPDIF_CHANNELS_DUALMONO)!=0);
+							  (m_SpdifOptions.PassthroughChannels&CAudioDecFilter::SPDIF_CHANNELS_DUALMONO)!=0);
 			DlgCheckBox_Check(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_STEREO,
-							  (m_SpdifOptions.PassthroughChannels&CAacDecFilter::SPDIF_CHANNELS_STEREO)!=0);
+							  (m_SpdifOptions.PassthroughChannels&CAudioDecFilter::SPDIF_CHANNELS_STEREO)!=0);
 			DlgCheckBox_Check(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_SURROUND,
-							  (m_SpdifOptions.PassthroughChannels&CAacDecFilter::SPDIF_CHANNELS_SURROUND)!=0);
+							  (m_SpdifOptions.PassthroughChannels&CAudioDecFilter::SPDIF_CHANNELS_SURROUND)!=0);
 			EnableDlgItems(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_LABEL,IDC_OPTIONS_SPDIF_CHANNELS_SURROUND,
-						   m_SpdifOptions.Mode==CAacDecFilter::SPDIF_MODE_AUTO);
+						   m_SpdifOptions.Mode==CAudioDecFilter::SPDIF_MODE_AUTO);
 
 			DlgCheckBox_Check(hDlg,IDC_OPTIONS_DOWNMIXSURROUND,
 							  m_fDownMixSurround);
@@ -282,7 +282,7 @@ INT_PTR CPlaybackOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lPara
 				EnableDlgItems(hDlg,
 							   IDC_OPTIONS_SPDIF_CHANNELS_LABEL,
 							   IDC_OPTIONS_SPDIF_CHANNELS_SURROUND,
-							   DlgComboBox_GetCurSel(hDlg,IDC_OPTIONS_SPDIFMODE)==CAacDecFilter::SPDIF_MODE_AUTO);
+							   DlgComboBox_GetCurSel(hDlg,IDC_OPTIONS_SPDIFMODE)==CAudioDecFilter::SPDIF_MODE_AUTO);
 			}
 			return TRUE;
 
@@ -321,18 +321,18 @@ INT_PTR CPlaybackOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lPara
 					SetGeneralUpdateFlag(UPDATE_GENERAL_BUILDMEDIAVIEWER);
 				}
 
-				CAacDecFilter::SpdifOptions SpdifOptions;
-				SpdifOptions.Mode=(CAacDecFilter::SpdifMode)
+				CAudioDecFilter::SpdifOptions SpdifOptions;
+				SpdifOptions.Mode=(CAudioDecFilter::SpdifMode)
 					DlgComboBox_GetCurSel(hDlg,IDC_OPTIONS_SPDIFMODE);
 				SpdifOptions.PassthroughChannels=0;
 				if (DlgCheckBox_IsChecked(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_MONO))
-					SpdifOptions.PassthroughChannels|=CAacDecFilter::SPDIF_CHANNELS_MONO;
+					SpdifOptions.PassthroughChannels|=CAudioDecFilter::SPDIF_CHANNELS_MONO;
 				if (DlgCheckBox_IsChecked(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_DUALMONO))
-					SpdifOptions.PassthroughChannels|=CAacDecFilter::SPDIF_CHANNELS_DUALMONO;
+					SpdifOptions.PassthroughChannels|=CAudioDecFilter::SPDIF_CHANNELS_DUALMONO;
 				if (DlgCheckBox_IsChecked(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_STEREO))
-					SpdifOptions.PassthroughChannels|=CAacDecFilter::SPDIF_CHANNELS_STEREO;
+					SpdifOptions.PassthroughChannels|=CAudioDecFilter::SPDIF_CHANNELS_STEREO;
 				if (DlgCheckBox_IsChecked(hDlg,IDC_OPTIONS_SPDIF_CHANNELS_SURROUND))
-					SpdifOptions.PassthroughChannels|=CAacDecFilter::SPDIF_CHANNELS_SURROUND;
+					SpdifOptions.PassthroughChannels|=CAudioDecFilter::SPDIF_CHANNELS_SURROUND;
 				if (SpdifOptions!=m_SpdifOptions) {
 					m_SpdifOptions=SpdifOptions;
 					GetAppClass().GetCoreEngine()->SetSpdifOptions(m_SpdifOptions);

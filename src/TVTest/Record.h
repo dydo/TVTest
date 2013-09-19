@@ -106,7 +106,6 @@ private:
 	//FileExistsOperation m_ExistsOperation;
 	bool m_fCurServiceOnly;
 	DWORD m_SaveStream;
-	bool m_fDescrambleCurServiceOnly;
 	SIZE_T m_BufferSize;
 
 	static CRecordManager *GetThis(HWND hDlg);
@@ -156,8 +155,6 @@ public:
 	bool GetCurServiceOnly() const { return m_fCurServiceOnly; }
 	bool SetSaveStream(DWORD Stream);
 	DWORD GetSaveStream() const { return m_SaveStream; }
-	bool SetDescrambleCurServiceOnly(bool fOnly);
-	bool GetDescrambleCurServiceOnly() const { return m_fDescrambleCurServiceOnly; }
 	bool SetBufferSize(SIZE_T BufferSize);
 	static bool InsertFileNameParameter(HWND hDlg,int ID,const POINT *pMenuPos);
 	static void GetEventInfoSample(EventInfo *pEventInfo);

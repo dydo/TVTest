@@ -12,11 +12,11 @@ static char THIS_FILE[]=__FILE__;
 
 
 CBonSrcFilter::CBonSrcFilter(LPUNKNOWN pUnk, HRESULT *phr)
-	: CBaseFilter(TEXT("Bon Source Filter"), pUnk, &m_cStateLock, CLSID_BONSOURCE)
+	: CBaseFilter(TEXT("Bon Source Filter"), pUnk, &m_cStateLock, CLSID_BonSrcFilter)
 	, m_pSrcPin(NULL)
 	, m_bOutputWhenPaused(false)
 {
-	TRACE(TEXT("CBonSrcFilter::CBonSrcFilter %p\n"),this);
+	TRACE(TEXT("CBonSrcFilter::CBonSrcFilter %p\n"), this);
 
 	// ピンのインスタンス生成
 	m_pSrcPin = new CBonSrcPin(phr, this);
@@ -25,11 +25,13 @@ CBonSrcFilter::CBonSrcFilter(LPUNKNOWN pUnk, HRESULT *phr)
 	*phr=S_OK;
 }
 
+
 CBonSrcFilter::~CBonSrcFilter()
 {
 	// ピンのインスタンスを削除する
 	if(m_pSrcPin)delete m_pSrcPin;
 }
+
 
 IBaseFilter* WINAPI CBonSrcFilter::CreateInstance(LPUNKNOWN pUnk, HRESULT *phr)
 {
@@ -41,7 +43,7 @@ IBaseFilter* WINAPI CBonSrcFilter::CreateInstance(LPUNKNOWN pUnk, HRESULT *phr)
 	}
 
 	IBaseFilter *pFilter;
-	*phr = pNewFilter->QueryInterface(IID_IBaseFilter, (void**)&pFilter);
+	*phr = pNewFilter->QueryInterface(IID_IBaseFilter, pointer_cast<void**>(&pFilter));
 	if (FAILED(*phr)) {
 		delete pNewFilter;
 		return NULL;
@@ -51,7 +53,7 @@ IBaseFilter* WINAPI CBonSrcFilter::CreateInstance(LPUNKNOWN pUnk, HRESULT *phr)
 }
 
 
-int CBonSrcFilter::GetPinCount(void)
+int CBonSrcFilter::GetPinCount()
 {
 	// ピン数を返す
 	return 1;
@@ -75,7 +77,7 @@ STDMETHODIMP CBonSrcFilter::Run(REFERENCE_TIME tStart)
 }
 
 
-STDMETHODIMP CBonSrcFilter::Pause(void)
+STDMETHODIMP CBonSrcFilter::Pause()
 {
 	TRACE(L"■CBonSrcFilter::Pause()\n");
 
@@ -83,7 +85,7 @@ STDMETHODIMP CBonSrcFilter::Pause(void)
 }
 
 
-STDMETHODIMP CBonSrcFilter::Stop(void)
+STDMETHODIMP CBonSrcFilter::Stop()
 {
 	TRACE(L"■CBonSrcFilter::Stop()\n");
 
@@ -102,16 +104,18 @@ STDMETHODIMP CBonSrcFilter::GetState(DWORD dw, FILTER_STATE *pState)
 }
 
 
-const bool CBonSrcFilter::InputMedia(CMediaData *pMediaData)
+bool CBonSrcFilter::InputMedia(CMediaData *pMediaData)
 {
-	m_cStateLock.Lock();
-	if (!m_pSrcPin
-			|| m_State==State_Stopped
-			|| (m_State==State_Paused && !m_bOutputWhenPaused)) {
-		m_cStateLock.Unlock();
-		return false;
+	{
+		CAutoLock Lock(&m_cStateLock);
+
+		if (!m_pSrcPin
+				|| m_State==State_Stopped
+				|| (m_State==State_Paused && !m_bOutputWhenPaused)) {
+			return false;
+		}
 	}
-	m_cStateLock.Unlock();
+
 	return m_pSrcPin->InputMedia(pMediaData);
 }
 

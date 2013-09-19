@@ -10,7 +10,8 @@ static char THIS_FILE[]=__FILE__;
 #endif
 
 /*
-	処理内容はワンセグ仕様前提なので、それ以外の場合は問題が出ると思います。
+	タイムスタンプ調整の処理内容はワンセグ仕様前提なので、
+	それ以外の場合は問題が出ると思います。
 */
 
 // REFERENCE_TIMEの一秒
@@ -19,34 +20,36 @@ static char THIS_FILE[]=__FILE__;
 #ifdef BONTSENGINE_1SEG_SUPPORT
 
 // フレームレート
-#define FRAME_RATE (REFERENCE_TIME_SECOND * 15000 / 1001)
-// フレームの表示時間を算出
-#define FRAME_TIME(time) ((LONGLONG)(time) * REFERENCE_TIME_SECOND * 1001 / 15000)
+#define FRAME_RATE_NUM		15000
+#define FRAME_RATE_FACTOR	1001
+
 // バッファサイズ
-#define BUFFER_SIZE 0x100000L
+#define SAMPLE_BUFFER_SIZE	0x100000L	// 1MiB
 
 // 初期値はほとんど何でもいいみたい
 // (ワンセグ用の設定でも BD の m2ts を再生できる)
-#define INITIAL_BITRATE	320000
-#define INITIAL_WIDTH	320
-#define INITIAL_HEIGHT	240
+#define INITIAL_BITRATE		320000
+#define INITIAL_WIDTH		320
+#define INITIAL_HEIGHT		240
 
 #else
 
-#define FRAME_RATE (REFERENCE_TIME_SECOND * 30000 / 1001)
-#define FRAME_TIME(time) ((LONGLONG)(time) * REFERENCE_TIME_SECOND * 1001 / 30000)
-#define BUFFER_SIZE 0x800000L
-#define INITIAL_BITRATE	32000000;
-#define INITIAL_WIDTH	1920;
-#define INITIAL_HEIGHT	1080;
+#define FRAME_RATE_NUM		30000
+#define FRAME_RATE_FACTOR	1001
+#define SAMPLE_BUFFER_SIZE	0x800000L	// 8MiB
+#define INITIAL_BITRATE		32000000;
+#define INITIAL_WIDTH		1920;
+#define INITIAL_HEIGHT		1080;
 
 #endif
+
+// フレームの表示時間を算出
+#define FRAME_TIME(time) \
+	((LONGLONG)(time) * REFERENCE_TIME_SECOND * FRAME_RATE_FACTOR / FRAME_RATE_NUM)
 
 
 CH264ParserFilter::CH264ParserFilter(LPUNKNOWN pUnk, HRESULT *phr)
 	: CTransformFilter(H264PARSERFILTER_NAME, pUnk, CLSID_H264ParserFilter)
-	, m_pfnVideoInfoCallback(NULL)
-	, m_pCallbackParam(NULL)
 	, m_H264Parser(this)
 	, m_bAdjustTime(
 #ifdef BONTSENGINE_1SEG_SUPPORT
@@ -66,7 +69,7 @@ CH264ParserFilter::CH264ParserFilter(LPUNKNOWN pUnk, HRESULT *phr)
 	m_MediaType.SetTemporalCompression(TRUE);
 	m_MediaType.SetSampleSize(0);
 	m_MediaType.SetFormatType(&FORMAT_VideoInfo);
-	VIDEOINFOHEADER *pvih = reinterpret_cast<VIDEOINFOHEADER*>(m_MediaType.AllocFormatBuffer(sizeof(VIDEOINFOHEADER)));
+	VIDEOINFOHEADER *pvih = pointer_cast<VIDEOINFOHEADER*>(m_MediaType.AllocFormatBuffer(sizeof(VIDEOINFOHEADER)));
 	if (!pvih) {
 		*phr = E_OUTOFMEMORY;
 		return;
@@ -82,10 +85,14 @@ CH264ParserFilter::CH264ParserFilter(LPUNKNOWN pUnk, HRESULT *phr)
 	*phr = S_OK;
 }
 
+
 CH264ParserFilter::~CH264ParserFilter(void)
 {
 	TRACE(TEXT("CH264ParserFilter::~CH264ParserFilter()\n"));
+
+	ClearSampleDataQueue(&m_SampleQueue);
 }
+
 
 IBaseFilter* WINAPI CH264ParserFilter::CreateInstance(LPUNKNOWN pUnk, HRESULT *phr)
 {
@@ -97,7 +104,8 @@ IBaseFilter* WINAPI CH264ParserFilter::CreateInstance(LPUNKNOWN pUnk, HRESULT *p
 	}
 
 	IBaseFilter *pFilter;
-	*phr = pNewFilter->QueryInterface(IID_IBaseFilter, (void**)&pFilter);
+	*phr = pNewFilter->QueryInterface(IID_IBaseFilter,
+									  pointer_cast<void**>(&pFilter));
 	if (FAILED(*phr)) {
 		delete pNewFilter;
 		return NULL;
@@ -105,6 +113,7 @@ IBaseFilter* WINAPI CH264ParserFilter::CreateInstance(LPUNKNOWN pUnk, HRESULT *p
 
 	return pFilter;
 }
+
 
 HRESULT CH264ParserFilter::CheckInputType(const CMediaType* mtIn)
 {
@@ -115,6 +124,7 @@ HRESULT CH264ParserFilter::CheckInputType(const CMediaType* mtIn)
 
 	return VFW_E_TYPE_NOT_ACCEPTED;
 }
+
 
 HRESULT CH264ParserFilter::CheckTransform(const CMediaType* mtIn, const CMediaType* mtOut)
 {
@@ -133,44 +143,53 @@ HRESULT CH264ParserFilter::CheckTransform(const CMediaType* mtIn, const CMediaTy
 	return VFW_E_TYPE_NOT_ACCEPTED;
 }
 
+
 HRESULT CH264ParserFilter::DecideBufferSize(IMemAllocator * pAllocator, ALLOCATOR_PROPERTIES *pprop)
 {
-	CAutoLock AutoLock(m_pLock);
 	CheckPointer(pAllocator, E_POINTER);
 	CheckPointer(pprop, E_POINTER);
 
 	// バッファは1個あればよい
-	if(!pprop->cBuffers)pprop->cBuffers = 1L;
+	if (pprop->cBuffers < 1)
+		pprop->cBuffers = 1;
 
-	if(pprop->cbBuffer < BUFFER_SIZE)pprop->cbBuffer = BUFFER_SIZE;
+	if (pprop->cbBuffer < SAMPLE_BUFFER_SIZE)
+		pprop->cbBuffer = SAMPLE_BUFFER_SIZE;
 
 	// アロケータプロパティを設定しなおす
 	ALLOCATOR_PROPERTIES Actual;
 	HRESULT hr = pAllocator->SetProperties(pprop, &Actual);
-	if(FAILED(hr))return hr;
+	if (FAILED(hr))
+		return hr;
 
 	// 要求を受け入れられたか判定
-	if(Actual.cbBuffer < pprop->cbBuffer)return E_FAIL;
+	if (Actual.cBuffers < pprop->cBuffers
+			|| Actual.cbBuffer < pprop->cbBuffer)
+		return E_FAIL;
 
 	return S_OK;
 }
 
+
 HRESULT CH264ParserFilter::GetMediaType(int iPosition, CMediaType *pMediaType)
 {
-	CAutoLock AutoLock(m_pLock);
 	CheckPointer(pMediaType, E_POINTER);
+	CAutoLock AutoLock(m_pLock);
 
-	if(iPosition < 0)return E_INVALIDARG;
-	if(iPosition > 0)return VFW_S_NO_MORE_ITEMS;
+	if (iPosition < 0)
+		return E_INVALIDARG;
+	if (iPosition > 0)
+		return VFW_S_NO_MORE_ITEMS;
 
 	*pMediaType = m_MediaType;
 
 	return S_OK;
 }
 
-HRESULT CH264ParserFilter::StartStreaming(void)
+
+HRESULT CH264ParserFilter::StartStreaming()
 {
-	CAutoLock AutoLock(m_pLock);
+	CAutoLock Lock(&m_ParserLock);
 
 	Reset();
 	m_VideoInfo.Reset();
@@ -180,98 +199,147 @@ HRESULT CH264ParserFilter::StartStreaming(void)
 	return S_OK;
 }
 
-HRESULT CH264ParserFilter::StopStreaming(void)
+
+HRESULT CH264ParserFilter::StopStreaming()
 {
+	CAutoLock Lock(&m_ParserLock);
+
 	m_BitRateCalculator.Reset();
 
 	return S_OK;
 }
 
+
+HRESULT CH264ParserFilter::BeginFlush()
+{
+	HRESULT hr = __super::BeginFlush();
+
+	CAutoLock Lock(&m_ParserLock);
+
+	Reset();
+	m_VideoInfo.Reset();
+
+	return hr;
+}
+
+
 HRESULT CH264ParserFilter::Transform(IMediaSample *pIn, IMediaSample *pOut)
 {
-	CAutoLock AutoLock(m_pLock);
-
 	// 入力データポインタを取得する
 	BYTE *pInData = NULL;
 	HRESULT hr = pIn->GetPointer(&pInData);
 	if (FAILED(hr))
 		return hr;
-	LONG DataSize = pIn->GetActualDataLength();
+	LONG InDataSize = pIn->GetActualDataLength();
 
-	m_pOutSample = pOut;
+	// 出力データポインタを取得する
+	BYTE *pOutData = NULL;
+	hr = pOut->GetPointer(&pOutData);
+	if (FAILED(hr))
+		return hr;
+	pOut->SetActualDataLength(0);
 
-	// 出力メディアサンプル設定
-	if (m_bAdjustTime) {
-		pOut->SetActualDataLength(0UL);
+	m_bChangeSize = false;
 
-		// タイムスタンプ取得
-		REFERENCE_TIME StartTime, EndTime;
-		hr = pIn->GetTime(&StartTime, &EndTime);
-		if (hr == S_OK || hr == VFW_S_NO_STOP_TIME) {
-			if (m_bAdjustFrameRate) {
-				if (m_PrevTime >= 0
-						&& (m_PrevTime >= StartTime
-							|| m_PrevTime + REFERENCE_TIME_SECOND * 3 < StartTime)) {
-					TRACE(TEXT("Reset H.264 media queue\n"));
-					m_MediaQueue.clear();
-				} else if (!m_MediaQueue.empty()) {
-					const REFERENCE_TIME Duration = StartTime - m_PrevTime;
-					const int Frames = (int)m_MediaQueue.size();
-					REFERENCE_TIME Start, End;
-					BYTE *pOutData = NULL;
+	{
+		CAutoLock Lock(&m_ParserLock);
 
-					Start = m_PrevTime;
-					pOut->GetPointer(&pOutData);
-					for (int i = 1; i <= Frames; i++) {
-						CMediaData *pMediaData = m_MediaQueue.front();
-						::CopyMemory(pOutData, pMediaData->GetData(), pMediaData->GetSize());
-						pOut->SetActualDataLength(pMediaData->GetSize());
-						End = m_PrevTime + Duration * i / Frames - 1;
-						pOut->SetTime(&Start, &End);
-						m_DeliverResult = m_pOutput->Deliver(pOut);
-						if (FAILED(m_DeliverResult)) {
-							m_MediaQueue.clear();
-							break;
+		if (m_bAdjustTime) {
+			// タイムスタンプ取得
+			REFERENCE_TIME StartTime, EndTime;
+			hr = pIn->GetTime(&StartTime, &EndTime);
+			if (hr == S_OK || hr == VFW_S_NO_STOP_TIME) {
+				if (m_bAdjustFrameRate) {
+					if (m_PrevTime >= 0
+							&& (m_PrevTime >= StartTime
+								|| m_PrevTime + REFERENCE_TIME_SECOND * 3 < StartTime)) {
+						TRACE(TEXT("Reset H.264 media queue\n"));
+						ClearSampleDataQueue(&m_SampleQueue);
+					} else if (!m_SampleQueue.empty()) {
+						const REFERENCE_TIME Duration = StartTime - m_PrevTime;
+						const size_t Frames = m_SampleQueue.size();
+						REFERENCE_TIME Start, End;
+
+						Start = m_PrevTime;
+						for (size_t i = 1; i <= Frames; i++) {
+							CSampleData *pSampleData = m_SampleQueue.front();
+							m_SampleQueue.pop_front();
+							End = m_PrevTime + Duration * (REFERENCE_TIME)i / (REFERENCE_TIME)Frames;
+							pSampleData->SetTime(Start, End);
+							Start = End;
+							m_OutSampleQueue.push_back(pSampleData);
 						}
-						m_MediaQueue.pop();
-						delete pMediaData;
-						Start = End + 1;
 					}
-					pOut->SetActualDataLength(0);
-				}
-				m_PrevTime = StartTime;
-			} else {
-				if (m_PrevTime < 0
-						|| _abs64((m_PrevTime + FRAME_TIME(m_SampleCount)) - StartTime) > REFERENCE_TIME_SECOND / 5LL) {
-#ifdef _DEBUG
-					if (m_PrevTime >= 0)
-						TRACE(TEXT("Reset H.264 sample time\n"));
-#endif
 					m_PrevTime = StartTime;
-					m_SampleCount = 0;
+				} else {
+					if (m_PrevTime < 0
+							|| _abs64((m_PrevTime + FRAME_TIME(m_SampleCount)) - StartTime) > REFERENCE_TIME_SECOND / 5LL) {
+#ifdef _DEBUG
+						if (m_PrevTime >= 0)
+							TRACE(TEXT("Reset H.264 sample time\n"));
+#endif
+						m_PrevTime = StartTime;
+						m_SampleCount = 0;
+					}
 				}
 			}
-		}
-	} else {
-		BYTE *pOutData = NULL;
-		HRESULT hr = pOut->GetPointer(&pOutData);
-		if (SUCCEEDED(hr)) {
-			hr = pOut->SetActualDataLength(DataSize);
+
+			hr = S_OK;
+		} else {
+			hr = pOut->SetActualDataLength(InDataSize);
 			if (SUCCEEDED(hr))
-				::CopyMemory(pOutData, pInData, DataSize);
+				::CopyMemory(pOutData, pInData, InDataSize);
+		}
+
+		m_H264Parser.StoreEs(pInData, InDataSize);
+
+		m_BitRateCalculator.Update(InDataSize);
+	}
+
+	if (!m_OutSampleQueue.empty()) {
+		do {
+			CSampleData *pSampleData = m_OutSampleQueue.front();
+
+			hr = pOut->SetActualDataLength(pSampleData->GetSize());
+			if (SUCCEEDED(hr)) {
+				::CopyMemory(pOutData, pSampleData->GetData(), pSampleData->GetSize());
+
+				if (pSampleData->HasTimestamp())
+					pOut->SetTime(&pSampleData->m_StartTime, &pSampleData->m_EndTime);
+				else
+					pOut->SetTime(NULL, NULL);
+
+				if (pSampleData->m_bChangeSize)
+					AttachMediaType(pOut, pSampleData->m_Width, pSampleData->m_Height);
+				else
+					pOut->SetMediaType(NULL);
+
+				hr = m_pOutput->Deliver(pOut);
+			}
+			m_OutSampleQueue.pop_front();
+			m_SampleDataPool.Restore(pSampleData);
+			if (FAILED(hr))
+				break;
+		} while (!m_OutSampleQueue.empty());
+
+		pOut->SetActualDataLength(0);
+
+		ClearSampleDataQueue(&m_OutSampleQueue);
+	}
+
+	if (SUCCEEDED(hr)) {
+		if (pOut->GetActualDataLength() > 0) {
+			if (m_bChangeSize)
+				AttachMediaType(pOut, m_VideoInfo.m_OrigWidth, m_VideoInfo.m_OrigHeight);
+			hr = S_OK;
+		} else {
+			hr = S_FALSE;
 		}
 	}
-	m_DeliverResult = S_OK;
 
-	m_H264Parser.StoreEs(pInData, DataSize);
-
-	m_BitRateCalculator.Update(DataSize);
-
-	if (pOut->GetActualDataLength() == 0)
-		return S_FALSE;
-
-	return m_DeliverResult;
+	return hr;
 }
+
 
 HRESULT CH264ParserFilter::Receive(IMediaSample *pSample)
 {
@@ -299,46 +367,10 @@ HRESULT CH264ParserFilter::Receive(IMediaSample *pSample)
 	return hr;
 }
 
-HRESULT CH264ParserFilter::BeginFlush(void)
-{
-	HRESULT hr = S_OK;
-
-	Reset();
-	m_VideoInfo.Reset();
-	if (m_pOutput)
-		hr = m_pOutput->DeliverBeginFlush();
-	return hr;
-}
-
-void CH264ParserFilter::SetVideoInfoCallback(VideoInfoCallback pCallback, const PVOID pParam)
-{
-	CAutoLock Lock(m_pLock);
-
-	m_pfnVideoInfoCallback = pCallback;
-	m_pCallbackParam = pParam;
-}
-
-bool CH264ParserFilter::GetVideoInfo(CMpeg2VideoInfo *pInfo) const
-{
-	if (!pInfo)
-		return false;
-
-	CAutoLock Lock(&m_VideoInfoLock);
-
-	*pInfo = m_VideoInfo;
-	return true;
-}
-
-void CH264ParserFilter::ResetVideoInfo()
-{
-	CAutoLock Lock(&m_VideoInfoLock);
-
-	m_VideoInfo.Reset();
-}
 
 bool CH264ParserFilter::SetAdjustTime(bool bAdjust)
 {
-	CAutoLock Lock(m_pLock);
+	CAutoLock Lock(&m_ParserLock);
 
 	if (m_bAdjustTime != bAdjust) {
 		m_bAdjustTime = bAdjust;
@@ -347,9 +379,10 @@ bool CH264ParserFilter::SetAdjustTime(bool bAdjust)
 	return true;
 }
 
+
 bool CH264ParserFilter::SetAdjustFrameRate(bool bAdjust)
 {
-	CAutoLock Lock(m_pLock);
+	CAutoLock Lock(&m_ParserLock);
 
 	if (m_bAdjustFrameRate != bAdjust) {
 		m_bAdjustFrameRate = bAdjust;
@@ -359,73 +392,87 @@ bool CH264ParserFilter::SetAdjustFrameRate(bool bAdjust)
 	return true;
 }
 
+
 void CH264ParserFilter::SetAttachMediaType(bool bAttach)
 {
+	CAutoLock Lock(&m_ParserLock);
+
 	m_bAttachMediaType = bAttach;
 }
 
-DWORD CH264ParserFilter::GetBitRate() const
-{
-	return m_BitRateCalculator.GetBitRate();
-}
 
 void CH264ParserFilter::Reset()
 {
 	m_H264Parser.Reset();
 	m_PrevTime = -1;
 	m_SampleCount = 0;
-	m_MediaQueue.clear();
+	ClearSampleDataQueue(&m_SampleQueue);
 }
+
+
+void CH264ParserFilter::ClearSampleDataQueue(CSampleDataQueue *pQueue)
+{
+	while (!pQueue->empty()) {
+		m_SampleDataPool.Restore(pQueue->front());
+		pQueue->pop_front();
+	}
+}
+
+
+HRESULT CH264ParserFilter::AttachMediaType(IMediaSample *pSample, int Width, int Height)
+{
+	CMediaType MediaType(m_pOutput->CurrentMediaType());
+	VIDEOINFOHEADER *pVideoInfo = pointer_cast<VIDEOINFOHEADER*>(MediaType.Format());
+	HRESULT hr;
+
+	if (pVideoInfo
+			&& (pVideoInfo->bmiHeader.biWidth != Width ||
+				pVideoInfo->bmiHeader.biHeight != Height)) {
+		pVideoInfo->bmiHeader.biWidth = Width;
+		pVideoInfo->bmiHeader.biHeight = Height;
+		hr = pSample->SetMediaType(&MediaType);
+	} else {
+		hr = S_FALSE;
+	}
+
+	return hr;
+}
+
 
 void CH264ParserFilter::OnAccessUnit(const CH264Parser *pParser, const CH264AccessUnit *pAccessUnit)
 {
 	WORD OrigWidth, OrigHeight;
 	OrigWidth = pAccessUnit->GetHorizontalSize();
 	OrigHeight = pAccessUnit->GetVerticalSize();
+	bool bChangeSize = false;
 
-	if (m_bAttachMediaType && m_VideoInfo.m_OrigWidth != OrigWidth) {
-		CMediaType MediaType(m_pOutput->CurrentMediaType());
-		VIDEOINFOHEADER *pVideoInfo=(VIDEOINFOHEADER*)MediaType.Format();
-
-		if (pVideoInfo
-				&& (pVideoInfo->bmiHeader.biWidth != OrigWidth
-					|| pVideoInfo->bmiHeader.biHeight != OrigHeight)) {
-			pVideoInfo->bmiHeader.biWidth = OrigWidth;
-			pVideoInfo->bmiHeader.biHeight = OrigHeight;
-			m_pOutSample->SetMediaType(&MediaType);
-		}
+	if (m_bAttachMediaType
+			&& (m_VideoInfo.m_OrigWidth != OrigWidth ||
+				m_VideoInfo.m_OrigHeight != OrigHeight)) {
+		bChangeSize = true;
+		m_bChangeSize = true;
 	}
 
 	if (m_bAdjustTime) {
-		/*
-			1フレーム単位でタイムスタンプを設定しないとかくつく
-		*/
-		if (m_bAdjustFrameRate && m_PrevTime >= 0) {
-			m_MediaQueue.push(new CMediaData(*pAccessUnit));
-		} else {
-			if (SUCCEEDED(m_DeliverResult)) {
-				BYTE *pOutData = NULL;
-				HRESULT hr = m_pOutSample->GetPointer(&pOutData);
-				if (SUCCEEDED(hr)) {
-					hr = m_pOutSample->SetActualDataLength(pAccessUnit->GetSize());
-					if (SUCCEEDED(hr)) {
-						::CopyMemory(pOutData, pAccessUnit->GetData(), pAccessUnit->GetSize());
-						// タイムスタンプ設定
-						if (m_PrevTime >= 0) {
-							REFERENCE_TIME StartTime = m_PrevTime + FRAME_TIME(m_SampleCount);
-							REFERENCE_TIME EndTime = m_PrevTime + FRAME_TIME(m_SampleCount + 1) - 1;
-							m_pOutSample->SetTime(&StartTime, &EndTime);
-						} else {
-							m_pOutSample->SetTime(NULL, NULL);
-						}
-						m_DeliverResult = m_pOutput->Deliver(m_pOutSample);
-						m_pOutSample->SetActualDataLength(0);
-					}
-				}
-			}
+		// ワンセグは1フレーム単位でタイムスタンプを設定しないとかくつく
+		CSampleData *pSampleData = m_SampleDataPool.Get(*pAccessUnit);
 
-			m_SampleCount++;
+		if (pSampleData != NULL) {
+			if (bChangeSize)
+				pSampleData->ChangeSize(OrigWidth, OrigHeight);
+
+			if (m_bAdjustFrameRate && m_PrevTime >= 0) {
+				m_SampleQueue.push_back(pSampleData);
+			} else {
+				if (m_PrevTime >= 0) {
+					REFERENCE_TIME StartTime = m_PrevTime + FRAME_TIME(m_SampleCount);
+					REFERENCE_TIME EndTime = m_PrevTime + FRAME_TIME(m_SampleCount + 1) - 1;
+					pSampleData->SetTime(StartTime, EndTime);
+				}
+				m_OutSampleQueue.push_back(pSampleData);
+			}
 		}
+		m_SampleCount++;
 	}
 
 	WORD DisplayWidth, DisplayHeight;
@@ -456,7 +503,7 @@ void CH264ParserFilter::OnAccessUnit(const CH264Parser *pParser, const CH264Acce
 		}
 	}
 
-	CMpeg2VideoInfo Info(OrigWidth, OrigHeight, DisplayWidth, DisplayHeight, AspectX, AspectY);
+	CVideoParser::VideoInfo Info(OrigWidth, OrigHeight, DisplayWidth, DisplayHeight, AspectX, AspectY);
 
 	CH264AccessUnit::TimingInfo TimingInfo;
 	if (pAccessUnit->GetTimingInfo(&TimingInfo)) {
@@ -467,16 +514,105 @@ void CH264ParserFilter::OnAccessUnit(const CH264Parser *pParser, const CH264Acce
 
 	if (Info != m_VideoInfo) {
 		// 映像のサイズ及びフレームレートが変わった
-		m_VideoInfoLock.Lock();
 		m_VideoInfo = Info;
-		m_VideoInfoLock.Unlock();
 
 		TRACE(TEXT("H.264 access unit %d x %d [SAR %d:%d (DAR %d:%d)] %lu/%lu\n"),
 			  OrigWidth, OrigHeight, SarX, SarY, AspectX, AspectY,
 			  Info.m_FrameRate.Num, Info.m_FrameRate.Denom);
 
 		// 通知
-		if (m_pfnVideoInfoCallback)
-			m_pfnVideoInfoCallback(&m_VideoInfo, m_pCallbackParam);
+		NotifyVideoInfo();
 	}
+}
+
+
+
+
+CH264ParserFilter::CSampleData::CSampleData(const CMediaData &Data)
+	: CMediaData(Data)
+{
+	ResetProperties();
+}
+
+
+void CH264ParserFilter::CSampleData::ResetProperties()
+{
+	m_StartTime = -1;
+	m_EndTime = -1;
+	m_bChangeSize = false;
+}
+
+
+void CH264ParserFilter::CSampleData::SetTime(const REFERENCE_TIME &StartTime, const REFERENCE_TIME &EndTime)
+{
+	m_StartTime = StartTime;
+	m_EndTime = EndTime;
+}
+
+
+void CH264ParserFilter::CSampleData::ChangeSize(int Width, int Height)
+{
+	m_bChangeSize = true;
+	m_Width = Width;
+	m_Height = Height;
+}
+
+
+
+
+CH264ParserFilter::CSampleDataPool::CSampleDataPool()
+	: m_MaxData(256)
+	, m_DataCount(0)
+{
+}
+
+
+CH264ParserFilter::CSampleDataPool::~CSampleDataPool()
+{
+	TRACE(TEXT("CH264ParserFilter::CSampleDataPool::~CSampleDataPool() Data count %lu / %lu\n"),
+		  (unsigned long)m_DataCount, (unsigned long)m_MaxData);
+
+	Clear();
+}
+
+
+void CH264ParserFilter::CSampleDataPool::Clear()
+{
+	CAutoLock Lock(&m_Lock);
+
+	while (!m_Queue.empty()) {
+		delete m_Queue.back();
+		m_Queue.pop_back();
+	}
+
+	m_DataCount = 0;
+}
+
+
+CH264ParserFilter::CSampleData *CH264ParserFilter::CSampleDataPool::Get(const CMediaData &Data)
+{
+	CAutoLock Lock(&m_Lock);
+
+	if (m_Queue.empty()) {
+		if (m_DataCount >= m_MaxData)
+			return NULL;
+		m_DataCount++;
+		return new CSampleData(Data);
+	}
+
+	CSampleData *pData = m_Queue.back();
+	pData->ResetProperties();
+	const DWORD Size = Data.GetSize();
+	if (pData->SetData(Data.GetData(), Size) < Size)
+		return NULL;
+	m_Queue.pop_back();
+	return pData;
+}
+
+
+void CH264ParserFilter::CSampleDataPool::Restore(CSampleData *pData)
+{
+	CAutoLock Lock(&m_Lock);
+
+	m_Queue.push_back(pData);
 }

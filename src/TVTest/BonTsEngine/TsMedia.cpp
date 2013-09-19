@@ -592,6 +592,52 @@ const bool CAdtsParser::StoreEs(const BYTE *pData, const DWORD dwSize)
 	return bTrigger;
 }
 
+bool CAdtsParser::StoreEs(const BYTE *pData, DWORD *pSize, CAdtsFrame **ppFrame)
+{
+	if (pData == NULL || pSize == NULL || *pSize == 0)
+		return false;
+
+	if (m_bIsStoring) {
+		if (m_AdtsFrame.GetSize() >= m_AdtsFrame.GetFrameLength()) {
+			m_AdtsFrame.ClearSize();
+			m_bIsStoring = false;
+		}
+	}
+
+	bool bFrame = false;
+	const DWORD Size = *pSize;
+	DWORD Pos = 0;
+
+	do {
+		if (!m_bIsStoring) {
+			// ヘッダを検索する
+			m_bIsStoring = SyncFrame(pData[Pos++]);
+		} else {
+			// データをストアする
+			const DWORD StoreRemain = m_AdtsFrame.GetFrameLength() - (WORD)m_AdtsFrame.GetSize();
+			const DWORD DataRemain = Size - Pos;
+
+			if (StoreRemain <= DataRemain) {
+				// ストア完了
+				m_AdtsFrame.AddData(&pData[Pos], StoreRemain);
+				Pos += StoreRemain;
+				if (ppFrame)
+					*ppFrame = &m_AdtsFrame;
+				bFrame = true;
+			} else {
+				// ストア未完了、次のペイロードを待つ
+				m_AdtsFrame.AddData(&pData[Pos], DataRemain);
+				Pos += DataRemain;
+			}
+			break;
+		}
+	} while (Pos < Size);
+
+	*pSize = Pos;
+
+	return bFrame;
+}
+
 void CAdtsParser::Reset(void)
 {
 	// 状態を初期化する

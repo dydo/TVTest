@@ -47,8 +47,11 @@ COSDOptions::COSDOptions()
 			m_fCompositionEnabled=true;
 	}
 
+	DrawUtil::GetSystemFont(DrawUtil::FONT_DEFAULT,&m_OSDFont);
+
 	LOGFONT lf;
 	DrawUtil::GetSystemFont(DrawUtil::FONT_MESSAGE,&lf);
+
 	m_NotificationBarFont=lf;
 	m_NotificationBarFont.lfHeight=
 #ifndef TVH264_FOR_1SEG
@@ -75,6 +78,7 @@ bool COSDOptions::ReadSettings(CSettings &Settings)
 	Settings.Read(TEXT("PseudoOSD"),&m_fPseudoOSD);
 	Settings.ReadColor(TEXT("OSDTextColor"),&m_TextColor);
 	Settings.Read(TEXT("OSDOpacity"),&m_Opacity);
+	Settings.Read(TEXT("OSDFont"),&m_OSDFont);
 	Settings.Read(TEXT("OSDFadeTime"),&m_FadeTime);
 	unsigned int EnabledOSD=m_EnabledOSD;
 	if (Settings.Read(TEXT("EnabledOSD"),&EnabledOSD)) {
@@ -100,32 +104,35 @@ bool COSDOptions::ReadSettings(CSettings &Settings)
 	if (Settings.Read(TEXT("NotifyEcmError"),&f))
 		EnableNotify(NOTIFY_ECMERROR,f);
 
-	// Font
-	TCHAR szFont[LF_FACESIZE];
-	if (Settings.Read(TEXT("NotificationBarFontName"),szFont,LF_FACESIZE)
-			&& szFont[0]!='\0') {
-		lstrcpy(m_NotificationBarFont.lfFaceName,szFont);
-		m_NotificationBarFont.lfEscapement=0;
-		m_NotificationBarFont.lfOrientation=0;
-		m_NotificationBarFont.lfUnderline=0;
-		m_NotificationBarFont.lfStrikeOut=0;
-		m_NotificationBarFont.lfCharSet=DEFAULT_CHARSET;
-		m_NotificationBarFont.lfOutPrecision=OUT_DEFAULT_PRECIS;
-		m_NotificationBarFont.lfClipPrecision=CLIP_DEFAULT_PRECIS;
-		m_NotificationBarFont.lfQuality=DRAFT_QUALITY;
-		m_NotificationBarFont.lfPitchAndFamily=DEFAULT_PITCH | FF_DONTCARE;
+	if (!Settings.Read(TEXT("NotificationBarFont"),&m_NotificationBarFont)) {
+		// 過去のバージョンとの互換用(そのうち消す)
+		TCHAR szFont[LF_FACESIZE];
+		if (Settings.Read(TEXT("NotificationBarFontName"),szFont,LF_FACESIZE)
+				&& szFont[0]!='\0') {
+			lstrcpy(m_NotificationBarFont.lfFaceName,szFont);
+			m_NotificationBarFont.lfEscapement=0;
+			m_NotificationBarFont.lfOrientation=0;
+			m_NotificationBarFont.lfUnderline=0;
+			m_NotificationBarFont.lfStrikeOut=0;
+			m_NotificationBarFont.lfCharSet=DEFAULT_CHARSET;
+			m_NotificationBarFont.lfOutPrecision=OUT_DEFAULT_PRECIS;
+			m_NotificationBarFont.lfClipPrecision=CLIP_DEFAULT_PRECIS;
+			m_NotificationBarFont.lfQuality=DRAFT_QUALITY;
+			m_NotificationBarFont.lfPitchAndFamily=DEFAULT_PITCH | FF_DONTCARE;
+		}
+		if (Settings.Read(TEXT("NotificationBarFontSize"),&Value)) {
+			m_NotificationBarFont.lfHeight=Value;
+			m_NotificationBarFont.lfWidth=0;
+		}
+		if (Settings.Read(TEXT("NotificationBarFontWeight"),&Value))
+			m_NotificationBarFont.lfWeight=Value;
+		if (Settings.Read(TEXT("NotificationBarFontItalic"),&Value))
+			m_NotificationBarFont.lfItalic=Value;
 	}
-	if (Settings.Read(TEXT("NotificationBarFontSize"),&Value)) {
-		m_NotificationBarFont.lfHeight=Value;
-		m_NotificationBarFont.lfWidth=0;
-	}
-	if (Settings.Read(TEXT("NotificationBarFontWeight"),&Value))
-		m_NotificationBarFont.lfWeight=Value;
-	if (Settings.Read(TEXT("NotificationBarFontItalic"),&Value))
-		m_NotificationBarFont.lfItalic=Value;
 
 	Settings.Read(TEXT("DisplayMenuFont"),&m_DisplayFont);
 	Settings.Read(TEXT("DisplayMenuFontAutoSize"),&m_fDisplayFontAutoSize);
+
 	return true;
 }
 
@@ -136,6 +143,7 @@ bool COSDOptions::WriteSettings(CSettings &Settings)
 	Settings.Write(TEXT("PseudoOSD"),m_fPseudoOSD);
 	Settings.WriteColor(TEXT("OSDTextColor"),m_TextColor);
 	Settings.Write(TEXT("OSDOpacity"),m_Opacity);
+	Settings.Write(TEXT("OSDFont"),&m_OSDFont);
 	Settings.Write(TEXT("OSDFadeTime"),m_FadeTime);
 	Settings.Write(TEXT("EnabledOSD"),m_EnabledOSD);
 	Settings.Write(TEXT("EnabledOSDMask"),OSD_FLAG(OSD_TRAILER_)-1);
@@ -146,14 +154,18 @@ bool COSDOptions::WriteSettings(CSettings &Settings)
 	Settings.Write(TEXT("NotifyEventName"),(m_NotificationBarFlags&NOTIFY_EVENTNAME)!=0);
 	Settings.Write(TEXT("NotifyEcmError"),(m_NotificationBarFlags&NOTIFY_ECMERROR)!=0);
 
-	// Font
+#if 0
 	Settings.Write(TEXT("NotificationBarFontName"),m_NotificationBarFont.lfFaceName);
 	Settings.Write(TEXT("NotificationBarFontSize"),(int)m_NotificationBarFont.lfHeight);
 	Settings.Write(TEXT("NotificationBarFontWeight"),(int)m_NotificationBarFont.lfWeight);
 	Settings.Write(TEXT("NotificationBarFontItalic"),(int)m_NotificationBarFont.lfItalic);
+#else
+	Settings.Write(TEXT("NotificationBarFont"),&m_NotificationBarFont);
+#endif
 
 	Settings.Write(TEXT("DisplayMenuFont"),&m_DisplayFont);
 	Settings.Write(TEXT("DisplayMenuFontAutoSize"),m_fDisplayFontAutoSize);
+
 	return true;
 }
 
@@ -221,6 +233,8 @@ INT_PTR COSDOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 			DlgCheckBox_Check(hDlg,IDC_OSDOPTIONS_SHOWOSD,m_fShowOSD);
 			DlgCheckBox_Check(hDlg,IDC_OSDOPTIONS_COMPOSITE,!m_fPseudoOSD);
 			m_CurTextColor=m_TextColor;
+			m_CurOSDFont=m_OSDFont;
+			::SetDlgItemText(hDlg,IDC_OSDOPTIONS_OSDFONT_INFO,m_OSDFont.lfFaceName);
 			::SetDlgItemInt(hDlg,IDC_OSDOPTIONS_FADETIME,m_FadeTime/1000,TRUE);
 			DlgUpDown_SetRange(hDlg,IDC_OSDOPTIONS_FADETIME_UD,1,UD_MAXVAL);
 			DlgCheckBox_Check(hDlg,IDC_OSDOPTIONS_SHOW_CHANNEL,(m_EnabledOSD&OSD_FLAG(OSD_CHANNEL))!=0);
@@ -253,6 +267,7 @@ INT_PTR COSDOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 		}
 		return TRUE;
 
+#if 0
 	case WM_DRAWITEM:
 		{
 			LPDRAWITEMSTRUCT pdis=reinterpret_cast<LPDRAWITEMSTRUCT>(lParam);
@@ -263,6 +278,7 @@ INT_PTR COSDOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 			DrawUtil::Fill(pdis->hDC,&rc,m_CurTextColor);
 		}
 		return TRUE;
+#endif
 
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
@@ -274,6 +290,27 @@ INT_PTR COSDOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 		case IDC_OSDOPTIONS_TEXTCOLOR:
 			if (ChooseColorDialog(hDlg,&m_CurTextColor))
 				InvalidateDlgItem(hDlg,IDC_OSDOPTIONS_TEXTCOLOR);
+			return TRUE;
+
+		case IDC_OSDOPTIONS_OSDFONT_CHOOSE:
+			{
+				CHOOSEFONT cf;
+				LOGFONT lf;
+
+				lf=m_CurOSDFont;
+				lf.lfWidth=0;
+				lf.lfHeight=-PointsToPixels(11);
+				cf.lStructSize=sizeof(CHOOSEFONT);
+				cf.hwndOwner=hDlg;
+				cf.lpLogFont=&lf;
+				cf.Flags=CF_FORCEFONTEXIST | CF_INITTOLOGFONTSTRUCT | CF_SCREENFONTS
+					| CF_ENABLEHOOK;
+				cf.lpfnHook=ChooseFontHookProc;
+				if (::ChooseFont(&cf)) {
+					m_CurOSDFont=lf;
+					::SetDlgItemText(hDlg,IDC_OSDOPTIONS_OSDFONT_INFO,lf.lfFaceName);
+				}
+			}
 			return TRUE;
 
 		case IDC_NOTIFICATIONBAR_ENABLE:
@@ -300,6 +337,7 @@ INT_PTR COSDOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 				m_fShowOSD=DlgCheckBox_IsChecked(hDlg,IDC_OSDOPTIONS_SHOWOSD);
 				m_fPseudoOSD=!DlgCheckBox_IsChecked(hDlg,IDC_OSDOPTIONS_COMPOSITE);
 				m_TextColor=m_CurTextColor;
+				m_OSDFont=m_CurOSDFont;
 				m_FadeTime=::GetDlgItemInt(hDlg,IDC_OSDOPTIONS_FADETIME,NULL,FALSE)*1000;
 				unsigned int EnabledOSD=0;
 				if (DlgCheckBox_IsChecked(hDlg,IDC_OSDOPTIONS_SHOW_CHANNEL))
@@ -331,7 +369,69 @@ INT_PTR COSDOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
 				m_fChanged=true;
 			}
 			return TRUE;
+
+		case NM_CUSTOMDRAW:
+			{
+				LPNMCUSTOMDRAW pnmcd=reinterpret_cast<LPNMCUSTOMDRAW>(lParam);
+
+				if (pnmcd->hdr.idFrom==IDC_OSDOPTIONS_TEXTCOLOR) {
+					switch (pnmcd->dwDrawStage) {
+					case CDDS_PREPAINT:
+						::SetWindowLongPtr(hDlg,DWLP_MSGRESULT,CDRF_NOTIFYPOSTPAINT);
+						return TRUE;
+
+					case CDDS_POSTPAINT:
+						{
+							HDC hdc=pnmcd->hdc;
+							RECT rc=pnmcd->rc;
+
+							bool fMargins=false;
+							CUxTheme Theme;
+							if (Theme.IsActive()) {
+								if (Theme.Open(pnmcd->hdr.hwndFrom,L"BUTTON")) {
+									MARGINS margins;
+									if (Theme.GetMargins(BP_PUSHBUTTON,PBS_NORMAL,
+														 TMT_CONTENTMARGINS,&margins)) {
+										rc.left+=margins.cxLeftWidth+1;
+										rc.top+=margins.cyTopHeight+1;
+										rc.right-=margins.cxRightWidth+1;
+										rc.bottom-=margins.cyBottomHeight+1;
+										fMargins=true;
+									}
+									Theme.Close();
+								}
+							}
+							if (!fMargins)
+								::InflateRect(&rc,-6,-4);
+							HGDIOBJ hOldPen=::SelectObject(hdc,::GetStockObject(BLACK_PEN));
+							::Rectangle(hdc,rc.left,rc.top,rc.right,rc.bottom);
+							::InflateRect(&rc,-1,-1);
+							::SelectObject(hdc,::GetStockObject(WHITE_PEN));
+							::Rectangle(hdc,rc.left,rc.top,rc.right,rc.bottom);
+							::SelectObject(hdc,hOldPen);
+							::InflateRect(&rc,-1,-1);
+							DrawUtil::Fill(hdc,&rc,m_CurTextColor);
+						}
+						return 0;
+					}
+				}
+			}
+			break;
 		}
+		break;
+	}
+
+	return FALSE;
+}
+
+
+UINT_PTR CALLBACK COSDOptions::ChooseFontHookProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM lParam)
+{
+	switch (uMsg) {
+	case WM_INITDIALOG:
+		// サイズの項目を非表示にする
+		ShowDlgItem(hDlg,stc3,false);
+		ShowDlgItem(hDlg,cmb3,false);
 		break;
 	}
 

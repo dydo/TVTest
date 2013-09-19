@@ -343,12 +343,13 @@ public:
 	bool GetTimeRange(SYSTEMTIME *pFirstTime,SYSTEMTIME *pLastTime) const;
 	bool GetCurrentTimeRange(SYSTEMTIME *pFirstTime,SYSTEMTIME *pLastTime) const;
 	bool GetDayTimeRange(int Day,SYSTEMTIME *pFirstTime,SYSTEMTIME *pLastTime) const;
-	bool ScrollToTime(const SYSTEMTIME &Time);
+	bool ScrollToTime(const SYSTEMTIME &Time,bool fHour=false);
 	bool ScrollToCurrentTime();
 	bool SetViewDay(int Day);
 	int GetViewDay() const { return m_Day; }
 	bool JumpEvent(WORD NetworkID,WORD TSID,WORD ServiceID,WORD EventID);
 	bool JumpEvent(const CEventInfoData &EventInfo);
+	bool ScrollToCurrentService();
 
 	int GetLinesPerHour() const { return m_LinesPerHour; }
 	int GetItemWidth() const { return m_ItemWidth; }
@@ -374,6 +375,8 @@ public:
 	unsigned int GetFilter() const { return m_Filter; }
 	void SetVisibleEventIcons(UINT VisibleIcons);
 	UINT GetVisibleEventIcons() const { return m_VisibleEventIcons; }
+	bool GetKeepTimePos() const { return m_fKeepTimePos; }
+	void SetKeepTimePos(bool fKeep);
 
 	void GetInfoPopupSize(int *pWidth,int *pHeight) { m_EventInfoPopup.GetSize(pWidth,pHeight); }
 	bool SetInfoPopupSize(int Width,int Height) { return m_EventInfoPopup.SetSize(Width,Height); }
@@ -410,6 +413,7 @@ private:
 	POINT m_ScrollPos;
 	POINT m_OldScrollPos;
 	bool m_fDragScroll;
+	bool m_fScrolling;
 	HCURSOR m_hDragCursor1;
 	HCURSOR m_hDragCursor2;
 	struct {
@@ -436,10 +440,11 @@ private:
 	public:
 		CEventInfoPopupHandler(CProgramGuide *pProgramGuide);
 	};
-	friend CEventInfoPopupHandler;
 	CEventInfoPopupHandler m_EventInfoPopupHandler;
 	bool m_fShowToolTip;
 	CTooltip m_Tooltip;
+	bool m_fKeepTimePos;
+	int m_CurTimePos;
 
 	CProgramGuideChannelProviderManager *m_pChannelProviderManager;
 	CProgramGuideChannelProvider *m_pChannelProvider;
@@ -486,16 +491,18 @@ private:
 	CProgramSearchDialog m_ProgramSearch;
 	class CProgramSearchEventHandler : public CProgramSearchDialog::CEventHandler
 	{
-		CProgramGuide *m_pProgramGuide;
 	public:
 		CProgramSearchEventHandler(CProgramGuide *pProgramGuide);
 		bool OnSearch() override;
 		void OnEndSearch() override;
 		bool OnClose() override;
+		bool OnLDoubleClick(const CEventInfoData *pEventInfo,LPARAM Param) override;
 		bool OnRButtonClick(const CEventInfoData *pEventInfo,LPARAM Param) override;
 		void OnHighlightChange(bool fHighlight) override;
+	private:
+		void DoCommand(int Command,const CEventInfoData *pEventInfo);
+		CProgramGuide *m_pProgramGuide;
 	};
-	friend CProgramSearchEventHandler;
 	CProgramSearchEventHandler m_ProgramSearchEventHandler;
 
 	TVTest::String m_Message;
@@ -507,7 +514,7 @@ private:
 
 	bool UpdateList(bool fUpdateList=false);
 	bool UpdateService(ProgramGuide::CServiceInfo *pService,bool fUpdateEpg);
-	bool SetTuningSpace(int Space);
+	void UpdateServiceList();
 	void CalcLayout();
 	void DrawEventList(const ProgramGuide::CEventLayout *pLayout,
 					   HDC hdc,const RECT &Rect,const RECT &PaintRect) const;
@@ -526,6 +533,10 @@ private:
 	void Scroll(int XOffset,int YOffset);
 	void SetScrollPos(const POINT &Pos);
 	void SetScrollBar();
+	int GetTimePos() const;
+	bool SetTimePos(int Pos);
+	void StoreTimePos();
+	void RestoreTimePos();
 	void SetCaption();
 	void SetTooltip();
 	ProgramGuide::CEventItem *GetEventItem(int ListIndex,int EventIndex);
@@ -664,6 +675,8 @@ public:
 // CProgramGuide::CFrame
 	bool SetAlwaysOnTop(bool fTop) override;
 	bool GetAlwaysOnTop() const override { return m_fAlwaysOnTop; }
+// CProgramGuideFrame
+	bool Show();
 
 private:
 	CAeroGlass m_AeroGlass;

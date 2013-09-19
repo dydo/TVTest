@@ -6,11 +6,12 @@
 
 
 // ‚±‚ÌƒtƒBƒ‹ƒ^‚ÌGUID {DCA86296-964A-4e64-857D-8D140E630707}
-DEFINE_GUID(CLSID_BONSOURCE, 0xdca86296, 0x964a, 0x4e64, 0x85, 0x7d, 0x8d, 0x14, 0x0e, 0x63, 0x07, 0x07);
+DEFINE_GUID(CLSID_BonSrcFilter, 0xdca86296, 0x964a, 0x4e64, 0x85, 0x7d, 0x8d, 0x14, 0x0e, 0x63, 0x07, 0x07);
 
-class CBonSrcFilter : public CBaseFilter
+class __declspec(uuid("DCA86296-964A-4e64-857D-8D140E630707")) CBonSrcFilter
+	: public CBaseFilter
 {
-friend CBonSrcPin;
+	friend CBonSrcPin;
 
 public:
 	DECLARE_IUNKNOWN
@@ -19,16 +20,16 @@ public:
 
 // CBaseFilter
 #ifdef _DEBUG
-	STDMETHODIMP Run(REFERENCE_TIME tStart);
-	STDMETHODIMP Pause(void);
-	STDMETHODIMP Stop(void);
+	STDMETHODIMP Run(REFERENCE_TIME tStart) override;
+	STDMETHODIMP Pause() override;
+	STDMETHODIMP Stop() override;
 #endif
-	STDMETHODIMP GetState(DWORD dwMSecs, __out FILTER_STATE *State);
-	int GetPinCount(void);
-	CBasePin *GetPin(int n);
+	STDMETHODIMP GetState(DWORD dwMSecs, __out FILTER_STATE *State) override;
+	int GetPinCount() override;
+	CBasePin *GetPin(int n) override;
 
 // CBonSrcFilter
-	const bool InputMedia(CMediaData *pMediaData);
+	bool InputMedia(CMediaData *pMediaData);
 
 	void Reset();
 	void Flush();

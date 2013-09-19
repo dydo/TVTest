@@ -498,9 +498,9 @@ bool CAppMain::InitializeChannel()
 						GetAppDirectory(szFileName);
 						ChannelFilePath.SetDirectory(szFileName);
 						fOK=ChannelFilePath.IsExists();
-#ifdef TVH264
+#ifdef DEFERRED_CHANNEL_FILE_EXTENSION
 						if (!fOK) {
-							ChannelFilePath.SetExtension(TEXT(".ch2"));
+							ChannelFilePath.SetExtension(DEFERRED_CHANNEL_FILE_EXTENSION);
 							fOK=ChannelFilePath.IsExists();
 						}
 #endif
@@ -527,9 +527,9 @@ bool CAppMain::InitializeChannel()
 				::lstrcpy(q,CHANNEL_FILE_EXTENSION);
 				ChannelFilePath.Append(szFileName);
 				fOK=ChannelFilePath.IsExists();
-#ifdef TVH264
+#ifdef DEFERRED_CHANNEL_FILE_EXTENSION
 				if (!fOK) {
-					ChannelFilePath.SetExtension(TEXT(".ch2"));
+					ChannelFilePath.SetExtension(DEFERRED_CHANNEL_FILE_EXTENSION);
 					fOK=ChannelFilePath.IsExists();
 				}
 #endif
@@ -543,7 +543,7 @@ bool CAppMain::InitializeChannel()
 	if (!ChannelFilePath.IsEmpty()) {
 		if (ChannelManager.LoadChannelList(ChannelFilePath.GetPath())) {
 			Logger.AddLog(TEXT("チャンネル設定を \"%s\" から読み込みました。"),
-						  ChannelFilePath.GetFileName());
+						  ChannelFilePath.GetPath());
 			if (!ChannelManager.ChannelFileHasStreamIDs())
 				Logger.AddLog(TEXT("(チャンネルファイルが古いので再スキャンをお薦めします)"));
 		}
@@ -602,35 +602,46 @@ bool CAppMain::GetChannelFileName(LPCTSTR pszDriverFileName,
 	if (IsStringEmpty(pszDriverFileName) || pszChannelFileName==NULL)
 		return false;
 
-	CFilePath ChannelFilePath;
-	ChannelFilePath.SetPath(pszDriverFileName);
-	const bool fRelative=ChannelFilePath.IsRelative();
+	const bool fRelative=::PathIsRelative(pszDriverFileName)!=FALSE;
+	TCHAR szPath[MAX_PATH],szPath2[MAX_PATH],szDir[MAX_PATH];
 	if (fRelative) {
-		TCHAR szDir[MAX_PATH];
+		if (!CoreEngine.GetDriverDirectory(szDir,lengthof(szDir)))
+			return false;
+		if (::PathCombine(szPath,szDir,pszDriverFileName)==NULL)
+			return false;
+	} else {
+		if (::lstrlen(pszDriverFileName)>=lengthof(szPath))
+			return false;
+		::lstrcpy(szPath,pszDriverFileName);
+	}
+	::PathRenameExtension(szPath,CHANNEL_FILE_EXTENSION);
+#ifdef DEFERRED_CHANNEL_FILE_EXTENSION
+	if (!::PathFileExists(szPath)) {
+		::lstrcpy(szPath2,szPath);
+		::PathRenameExtension(szPath2,DEFERRED_CHANNEL_FILE_EXTENSION);
+		if (::PathFileExists(szPath2))
+			::lstrcpy(szPath,szPath2);
+	}
+#endif
+	if (fRelative && !::PathFileExists(szPath)) {
 		GetAppDirectory(szDir);
-		ChannelFilePath.RemoveDirectory();
-		ChannelFilePath.SetDirectory(szDir);
-	}
-	ChannelFilePath.SetExtension(CHANNEL_FILE_EXTENSION);
-#ifdef TVH264
-	if (!ChannelFilePath.IsExists()) {
-		ChannelFilePath.SetExtension(TEXT(".ch2"));
-	}
+		if (::PathCombine(szPath2,szDir,pszDriverFileName)!=NULL) {
+			::PathRenameExtension(szPath2,CHANNEL_FILE_EXTENSION);
+			if (::PathFileExists(szPath2)) {
+				::lstrcpy(szPath,szPath2);
+			}
+#ifdef DEFERRED_CHANNEL_FILE_EXTENSION
+			else {
+				::PathRenameExtension(szPath2,DEFERRED_CHANNEL_FILE_EXTENSION);
+				if (::PathFileExists(szPath2))
+					::lstrcpy(szPath,szPath2);
+			}
 #endif
-	if (fRelative && !ChannelFilePath.IsExists()
-			&& !IsStringEmpty(CoreEngine.GetDriverDirectory())) {
-		ChannelFilePath.RemoveDirectory();
-		ChannelFilePath.SetDirectory(CoreEngine.GetDriverDirectory());
-		ChannelFilePath.SetExtension(CHANNEL_FILE_EXTENSION);
-#ifdef TVH264
-		if (!ChannelFilePath.IsExists()) {
-			ChannelFilePath.SetExtension(TEXT(".ch2"));
 		}
-#endif
 	}
-	if (ChannelFilePath.GetLength()>=MaxChannelFileName)
+	if (::lstrlen(szPath)>=MaxChannelFileName)
 		return false;
-	ChannelFilePath.GetPath(pszChannelFileName);
+	::lstrcpy(pszChannelFileName,szPath);
 	return true;
 }
 
@@ -731,7 +742,7 @@ bool CAppMain::UpdateChannelList(LPCTSTR pszBonDriverName,const CTuningSpaceList
 
 		bool ChannelItem(CFavoriteFolder &Folder,CFavoriteChannel &Channel) override
 		{
-			if (::lstrcmpi(Channel.GetBonDriverFileName(),m_pszBonDriver)==0) {
+			if (IsEqualFileName(Channel.GetBonDriverFileName(),m_pszBonDriver)) {
 				const CChannelInfo &ChannelInfo=Channel.GetChannelInfo();
 				const CChannelList *pChannelList=m_pTuningSpaceList->GetChannelList(ChannelInfo.GetSpace());
 
@@ -1051,7 +1062,7 @@ bool CAppMain::OpenTuner(LPCTSTR pszFileName)
 	if (IsStringEmpty(pszFileName))
 		return false;
 	if (CoreEngine.IsTunerOpen()
-			&& ::lstrcmpi(CoreEngine.GetDriverFileName(),pszFileName)==0)
+			&& IsEqualFileName(CoreEngine.GetDriverFileName(),pszFileName))
 		return true;
 
 	TRACE(TEXT("CAppMain::OpenTuner(%s)\n"),pszFileName);
@@ -1068,8 +1079,7 @@ bool CAppMain::OpenTuner(LPCTSTR pszFileName)
 		CoreEngine.CloseTuner();
 	}
 	if (CoreEngine.IsCasCardOpen()
-			&& (DriverOptions.IsNoDescramble(pszFileName)
-				|| CoreEngine.IsDriverCardReader())) {
+			&& (DriverOptions.IsNoDescramble(pszFileName))) {
 		if (CoreEngine.CloseCasCard()) {
 			Logger.AddLog(TEXT("カードリーダを閉じました。"));
 		}
@@ -2070,7 +2080,7 @@ bool CTunerSelectMenu::Create(HWND hwnd)
 	for (i=0;i<DriverManager.NumDrivers();i++) {
 		CDriverInfo *pDriverInfo=DriverManager.GetDriverInfo(i);
 
-		if (::lstrcmpi(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName())==0) {
+		if (IsEqualFileName(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName())) {
 			continue;
 		}
 		TCHAR szFileName[MAX_PATH];
@@ -2892,7 +2902,7 @@ void CUICore::InitTunerMenu(HMENU hmenu)
 		::PathRemoveExtension(szText);
 		Menu.AppendUnformatted(CM_DRIVER_FIRST+i,szText);
 		if (CoreEngine.IsTunerOpen()
-				&& ::lstrcmpi(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName())==0)
+				&& IsEqualFileName(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName()))
 			CurDriver=i;
 	}
 	if (CurDriver<0 && CoreEngine.IsTunerOpen()) {
@@ -2931,7 +2941,7 @@ bool CUICore::ProcessTunerMenu(int Command)
 	for (i=0;i<DriverManager.NumDrivers();i++) {
 		const CDriverInfo *pDriverInfo=DriverManager.GetDriverInfo(i);
 
-		if (::lstrcmpi(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName())==0)
+		if (IsEqualFileName(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName()))
 			continue;
 		if (pDriverInfo->IsTuningSpaceListLoaded()) {
 			const CTuningSpaceList *pTuningSpaceList=pDriverInfo->GetAvailableTuningSpaceList();
@@ -3809,6 +3819,7 @@ class CMyChannelPanelEventHandler : public CChannelPanel::CEventHandler
 		CPopupMenu Menu(hInst,IDM_CHANNELPANEL);
 
 		Menu.CheckItem(CM_CHANNELPANEL_DETAILPOPUP,ChannelPanel.GetDetailToolTip());
+		Menu.CheckItem(CM_CHANNELPANEL_SCROLLTOCURCHANNEL,ChannelPanel.GetScrollToCurChannel());
 		Menu.CheckRadioItem(CM_CHANNELPANEL_EVENTS_1,CM_CHANNELPANEL_EVENTS_4,
 							CM_CHANNELPANEL_EVENTS_1+ChannelPanel.GetEventsPerChannel()-1);
 		Menu.CheckRadioItem(CM_CHANNELPANEL_EXPANDEVENTS_2,CM_CHANNELPANEL_EXPANDEVENTS_8,
@@ -3848,8 +3859,10 @@ class CMyEpgLoadEventHandler
 			CEventManager::ServiceList ServiceList;
 
 			if (pEventManager->GetServiceList(&ServiceList)) {
-				for (size_t i=0;i<ServiceList.size();i++)
-					EpgProgramList.UpdateService(pEventManager,&ServiceList[i]);
+				for (size_t i=0;i<ServiceList.size();i++) {
+					EpgProgramList.UpdateService(pEventManager,&ServiceList[i],
+						CEpgProgramList::SERVICE_UPDATE_DATABASE);
+				}
 				MainWindow.PostMessage(WM_APP_EPGLOADED,0,0);
 			}
 		}
@@ -3945,7 +3958,7 @@ bool CMyProgramGuideChannelProviderManager::Create(LPCTSTR pszDefaultTuner)
 
 		if (pDriverInfo!=NULL) {
 			if (pCurChannelProvider!=NULL
-					&& ::lstrcmpi(DefaultTuner.c_str(),pDriverInfo->GetFileName())==0) {
+					&& IsEqualFileName(DefaultTuner.c_str(),pDriverInfo->GetFileName())) {
 				m_CurChannelProvider=(int)m_ChannelProviderList.size();
 				m_ChannelProviderList.push_back(pCurChannelProvider);
 				pCurChannelProvider=NULL;
@@ -4043,7 +4056,7 @@ bool CMyProgramGuideChannelProviderManager::CFavoritesChannelProvider::GetBonDri
 		return false;
 
 	for (size_t i=1;i<m_ChannelList.size();i++) {
-		if (::lstrcmpi(m_ChannelList[i].GetBonDriverFileName(),pszBonDriver)!=0)
+		if (!IsEqualFileName(m_ChannelList[i].GetBonDriverFileName(),pszBonDriver))
 			return false;
 	}
 
@@ -4883,7 +4896,7 @@ class CMyChannelDisplayEventHandler : public CChannelDisplay::CEventHandler
 	void OnTunerSelect(LPCTSTR pszDriverFileName,int TuningSpace)
 	{
 		if (CoreEngine.IsTunerOpen()
-				&& ::lstrcmpi(CoreEngine.GetDriverFileName(),pszDriverFileName)==0) {
+				&& IsEqualFileName(CoreEngine.GetDriverFileName(),pszDriverFileName)) {
 			MainWindow.SendCommand(CM_CHANNELDISPLAY);
 		} else {
 			if (RecordManager.IsRecording()) {
@@ -5371,6 +5384,13 @@ void CFullscreen::ShowPanel(bool fShow)
 		}
 		m_fShowPanel=fShow;
 	}
+}
+
+
+bool CFullscreen::SetPanelWidth(int Width)
+{
+	m_PanelWidth=Width;
+	return true;
 }
 
 
@@ -6083,6 +6103,8 @@ bool CMainWindow::ReadSettings(CSettings &Settings)
 	if (Settings.Read(TEXT("PanelDockingIndex"),&Value)
 			&& (Value==0 || Value==1))
 		m_PanelPaneIndex=Value;
+	if (Settings.Read(TEXT("FullscreenPanelWidth"),&Value))
+		m_Fullscreen.SetPanelWidth(Value);
 	if (Settings.Read(TEXT("ThinFrameWidth"),&Value))
 		m_ThinFrameWidth=max(Value,1);
 	Value=FRAME_NORMAL;
@@ -6119,6 +6141,7 @@ bool CMainWindow::WriteSettings(CSettings &Settings)
 	Settings.Write(TEXT("ShowTitleBar"),m_fShowTitleBar);
 //	Settings.Write(TEXT("PopupTitleBar"),m_fPopupTitleBar);
 	Settings.Write(TEXT("PanelDockingIndex"),m_PanelPaneIndex);
+	Settings.Write(TEXT("FullscreenPanelWidth"),m_Fullscreen.GetPanelWidth());
 	Settings.Write(TEXT("FrameType"),
 		!m_fCustomFrame?FRAME_NORMAL:(m_CustomFrameWidth==0?FRAME_NONE:FRAME_CUSTOM));
 //	Settings.Write(TEXT("ThinFrameWidth"),m_ThinFrameWidth);
@@ -7710,24 +7733,24 @@ void CMainWindow::OnCommand(HWND hwnd,int id,HWND hwndCtl,UINT codeNotify)
 	case CM_SPDIF_PASSTHROUGH:
 	case CM_SPDIF_AUTO:
 		{
-			CAacDecFilter::SpdifOptions Options(PlaybackOptions.GetSpdifOptions());
+			CAudioDecFilter::SpdifOptions Options(PlaybackOptions.GetSpdifOptions());
 
-			Options.Mode=(CAacDecFilter::SpdifMode)(id-CM_SPDIF_DISABLED);
+			Options.Mode=(CAudioDecFilter::SpdifMode)(id-CM_SPDIF_DISABLED);
 			CoreEngine.SetSpdifOptions(Options);
 		}
 		return;
 
 	case CM_SPDIF_TOGGLE:
 		{
-			CAacDecFilter::SpdifOptions Options(PlaybackOptions.GetSpdifOptions());
+			CAudioDecFilter::SpdifOptions Options(PlaybackOptions.GetSpdifOptions());
 
 			if (CoreEngine.m_DtvEngine.m_MediaViewer.IsSpdifPassthrough())
-				Options.Mode=CAacDecFilter::SPDIF_MODE_DISABLED;
+				Options.Mode=CAudioDecFilter::SPDIF_MODE_DISABLED;
 			else
-				Options.Mode=CAacDecFilter::SPDIF_MODE_PASSTHROUGH;
+				Options.Mode=CAudioDecFilter::SPDIF_MODE_PASSTHROUGH;
 			CoreEngine.SetSpdifOptions(Options);
 			SideBar.CheckItem(CM_SPDIF_TOGGLE,
-							  Options.Mode==CAacDecFilter::SPDIF_MODE_PASSTHROUGH);
+							  Options.Mode==CAudioDecFilter::SPDIF_MODE_PASSTHROUGH);
 		}
 		return;
 
@@ -8483,8 +8506,16 @@ void CMainWindow::OnCommand(HWND hwnd,int id,HWND hwndCtl,UINT codeNotify)
 		ChannelPanel.UpdateAllChannels(true);
 		return;
 
+	case CM_CHANNELPANEL_CURCHANNEL:
+		ChannelPanel.ScrollToCurrentChannel();
+		return;
+
 	case CM_CHANNELPANEL_DETAILPOPUP:
 		ChannelPanel.SetDetailToolTip(!ChannelPanel.GetDetailToolTip());
+		return;
+
+	case CM_CHANNELPANEL_SCROLLTOCURCHANNEL:
+		ChannelPanel.SetScrollToCurChannel(!ChannelPanel.GetScrollToCurChannel());
 		return;
 
 	case CM_CHANNELPANEL_EVENTS_1:
@@ -8650,7 +8681,7 @@ void CMainWindow::OnCommand(HWND hwnd,int id,HWND hwndCtl,UINT codeNotify)
 
 			if (pDriverInfo!=NULL) {
 				if (!CoreEngine.IsTunerOpen()
-						|| ::lstrcmpi(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName())!=0) {
+						|| !IsEqualFileName(pDriverInfo->GetFileName(),CoreEngine.GetDriverFileName())) {
 					if (AppMain.OpenTuner(pDriverInfo->GetFileName())) {
 						AppMain.RestoreChannel();
 					}
@@ -9124,7 +9155,7 @@ void CMainWindow::OnTimer(HWND hwnd,UINT id)
 bool CMainWindow::UpdateProgramInfo()
 {
 	const bool fNext=InfoPanel.GetProgramInfoNext();
-	TCHAR szText[4096],szTemp[1024];
+	TCHAR szText[4096],szTemp[2048];
 	CStaticStringFormatter Formatter(szText,lengthof(szText));
 
 	if (fNext)
@@ -9381,7 +9412,7 @@ bool CMainWindow::OnInitMenuPopup(HMENU hmenu)
 		Menu.Append(CM_SPDIF_DISABLED,TEXT("S/PDIFパススルー : 無効"));
 		Menu.Append(CM_SPDIF_PASSTHROUGH,TEXT("S/PDIFパススルー : 有効"));
 		Menu.Append(CM_SPDIF_AUTO,TEXT("S/PDIFパススルー : 自動切替"));
-		CAacDecFilter::SpdifOptions SpdifOptions;
+		CAudioDecFilter::SpdifOptions SpdifOptions;
 		CoreEngine.GetSpdifOptions(&SpdifOptions);
 		Menu.CheckRadioItem(CM_SPDIF_DISABLED,CM_SPDIF_AUTO,
 							CM_SPDIF_DISABLED+(int)SpdifOptions.Mode);
@@ -10144,19 +10175,20 @@ bool CMainWindow::ShowProgramGuide(bool fShow,unsigned int Flags,const ProgramGu
 		} else {
 			ProgramGuideFrame.Create(NULL,
 				WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX |
-					WS_THICKFRAME | WS_CLIPCHILDREN | WS_VISIBLE);
+					WS_THICKFRAME | WS_CLIPCHILDREN);
 		}
 
 		SYSTEMTIME stFirst,stLast;
 		ProgramGuideOptions.GetTimeRange(&stFirst,&stLast);
 		g_ProgramGuide.SetTimeRange(&stFirst,&stLast);
 		g_ProgramGuide.SetViewDay(CProgramGuide::DAY_TODAY);
-		g_ProgramGuide.ScrollToCurrentTime();
 
-		if (fOnScreen)
+		if (fOnScreen) {
 			m_Viewer.GetDisplayBase().SetVisible(true);
-		else
+		} else {
+			ProgramGuideFrame.Show();
 			ProgramGuideFrame.Update();
+		}
 
 		if (EpgOptions.IsEpgFileLoading()
 				|| EpgOptions.IsEDCBDataLoading()) {
@@ -10192,6 +10224,8 @@ bool CMainWindow::ShowProgramGuide(bool fShow,unsigned int Flags,const ProgramGu
 		}
 		g_ProgramGuide.SetCurrentChannelProvider(Provider,Space);
 		g_ProgramGuide.UpdateProgramGuide(true);
+		if (ProgramGuideOptions.ScrollToCurChannel())
+			g_ProgramGuide.ScrollToCurrentService();
 	} else {
 		if (ProgramGuideFrame.IsCreated()) {
 			ProgramGuideFrame.Destroy();

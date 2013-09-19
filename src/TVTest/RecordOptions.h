@@ -17,7 +17,6 @@ class CRecordOptions : public COptions
 	bool m_fCurServiceOnly;
 	bool m_fSaveSubtitle;
 	bool m_fSaveDataCarrousel;
-	bool m_fDescrambleCurServiceOnly;
 	bool m_fAlertLowFreeSpace;
 	unsigned int m_LowFreeSpaceThreshold;
 	unsigned int m_BufferSize;

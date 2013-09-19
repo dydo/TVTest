@@ -419,6 +419,8 @@ bool CEpgProgramList::UpdateService(CEventManager *pEventManager,
 	::FillMemory(&stNewestTime,sizeof(SYSTEMTIME),0x00);
 #endif
 
+	const bool fDatabase=(Flags & SERVICE_UPDATE_DATABASE)!=0;
+
 	for (CEventManager::EventList::const_iterator itrEvent=EventList.begin();itrEvent!=EventList.end();++itrEvent) {
 		CEventInfoData &EventData=
 			pServiceInfo->m_EventList.EventDataMap.insert(
@@ -428,6 +430,7 @@ bool CEpgProgramList::UpdateService(CEventManager *pEventManager,
 		EventData.m_NetworkID=ServiceData.m_NetworkID;
 		EventData.m_TSID=ServiceData.m_TSID;
 		EventData.m_ServiceID=ServiceData.m_ServiceID;
+		EventData.m_fDatabase=fDatabase;
 
 #ifdef _DEBUG
 		if (CompareSystemTime(&EventData.m_stStartTime,&stOldestTime)<0)
@@ -545,7 +548,8 @@ bool CEpgProgramList::UpdateService(CEventManager *pEventManager,
 #endif
 				}
 			}
-			if (!fMergeOldEvents)
+
+			if (!fMergeOldEvents && !fDatabase)
 				pServiceInfo->m_fMergeOldEvents=false;
 
 #ifdef _DEBUG
@@ -557,7 +561,7 @@ bool CEpgProgramList::UpdateService(CEventManager *pEventManager,
 		delete pOldServiceInfo;
 		m_ServiceMap[Key]=pServiceInfo;
 	} else {
-		pServiceInfo->m_fMergeOldEvents=false;
+		pServiceInfo->m_fMergeOldEvents=fDatabase;
 	}
 
 	m_fUpdated=true;

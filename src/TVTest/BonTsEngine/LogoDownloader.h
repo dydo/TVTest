@@ -36,13 +36,14 @@ public:
 		BYTE LogoType;
 		WORD DataSize;
 		const BYTE *pData;
+		SYSTEMTIME Time;
 	};
 
 	class ABSTRACT_CLASS_DECL ILogoHandler
 	{
 	public:
 		virtual ~ILogoHandler() {}
-		virtual void OnLogo(const LogoData *pData) = 0;
+		virtual void OnLogoDownloaded(const LogoData *pData) = 0;
 	};
 
 	void SetLogoHandler(ILogoHandler *pHandler);
@@ -60,6 +61,7 @@ private:
 	int GetServiceIndexByID(const WORD ServiceID) const;
 	bool MapDataEs(const int Index);
 	bool UnmapDataEs(const int Index);
+	bool GetTotTime(SYSTEMTIME *pTime);
 
 	CTsPidMapManager m_PidMapManager;
 

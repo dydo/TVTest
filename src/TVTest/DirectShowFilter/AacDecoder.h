@@ -6,6 +6,7 @@
 
 
 #include "neaacdec.h"
+#include "AudioDecoder.h"
 #include "TsMedia.h"
 
 
@@ -16,29 +17,36 @@
 
 
 class CAacDecoder
+	: public CAudioDecoder
 {
 public:
-	class IPcmHandler
-	{
-	public:
-		virtual void OnPcmFrame(const CAacDecoder *pAacDecoder, const BYTE *pData, const DWORD dwSamples, const BYTE byChannel) = 0;
-	};
+	CAacDecoder();
+	~CAacDecoder();
 
-	CAacDecoder(IPcmHandler *pPcmHandler);
-	virtual ~CAacDecoder();
+// CAudioDecoder
+	bool Open() override;
+	void Close() override;
+	bool IsOpened() const override;
+	bool Reset() override;
+	bool Decode(const BYTE *pData, DWORD *pDataSize, DecodeFrameInfo *pInfo) override;
 
-	const bool OpenDecoder(void);
-	void CloseDecoder(void);
+	bool IsSpdifSupported() const override { return true; }
+	bool GetSpdifFrameInfo(SpdifFrameInfo *pInfo) const override;
+	int GetSpdifBurstPayload(BYTE *pBuffer, DWORD BufferSize) const override;
 
-	const bool ResetDecoder(void);
-	const bool Decode(const CAdtsFrame *pFrame);
-
-	const BYTE GetChannelConfig() const;
+	bool GetChannelMap(int Channels, int *pMap) const override;
+	bool GetDownmixInfo(DownmixInfo *pInfo) const override;
 
 private:
-	IPcmHandler *m_pPcmHandler;
+	bool OpenDecoder();
+	void CloseDecoder();
+	bool ResetDecoder();
+	bool DecodeFrame(const CAdtsFrame *pFrame, DecodeFrameInfo *pInfo);
 
+	CAdtsParser m_AdtsParser;
 	NeAACDecHandle m_hDecoder;
 	bool m_bInitRequest;
-	BYTE m_byLastChannelConfig;
+	BYTE m_LastChannelConfig;
+	const CAdtsFrame *m_pAdtsFrame;
+	bool m_bDecodeError;
 };

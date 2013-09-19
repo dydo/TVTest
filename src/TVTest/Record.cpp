@@ -222,7 +222,6 @@ CRecordManager::CRecordManager()
 	//, m_ExistsOperation(EXISTS_CONFIRM)
 	, m_fCurServiceOnly(false)
 	, m_SaveStream(CTsSelector::STREAM_ALL)
-	, m_fDescrambleCurServiceOnly(false)
 	, m_BufferSize(0x100000)
 {
 	m_StartTimeSpec.Type=TIME_NOTSPECIFIED;
@@ -341,14 +340,11 @@ bool CRecordManager::StartRecord(CDtvEngine *pDtvEngine,LPCTSTR pszFileName,bool
 	DWORD OldWriteStream;
 	pDtvEngine->GetWriteStream(NULL,&OldWriteStream);
 	pDtvEngine->SetWriteCurServiceOnly(m_fCurServiceOnly,m_SaveStream);
-	bool fDescrambleCurOnly=pDtvEngine->GetDescrambleCurServiceOnly();
-	pDtvEngine->SetDescrambleCurServiceOnly(m_fDescrambleCurServiceOnly);
 	pDtvEngine->m_FileWriter.SetBufferSize((DWORD)m_BufferSize);
 	if (!fTimeShift)
 		pDtvEngine->m_FileWriter.ClearQueue();
 	if (!m_RecordTask.Start(pDtvEngine,pszFileName)) {
 		pDtvEngine->SetWriteCurServiceOnly(fOldWriteCurOnly,OldWriteStream);
-		pDtvEngine->SetDescrambleCurServiceOnly(fDescrambleCurOnly);
 		SetError(pDtvEngine->m_FileWriter.GetLastErrorException());
 		return false;
 	}
@@ -1354,13 +1350,6 @@ bool CRecordManager::SetCurServiceOnly(bool fOnly)
 bool CRecordManager::SetSaveStream(DWORD Stream)
 {
 	m_SaveStream=Stream;
-	return true;
-}
-
-
-bool CRecordManager::SetDescrambleCurServiceOnly(bool fOnly)
-{
-	m_fDescrambleCurServiceOnly=fOnly;
 	return true;
 }
 

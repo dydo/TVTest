@@ -2361,7 +2361,7 @@ bool CPluginManager::LoadPlugins(LPCTSTR pszDirectory,const std::vector<LPCTSTR>
 			if (pExcludePlugins!=NULL) {
 				bool fExclude=false;
 				for (size_t i=0;i<pExcludePlugins->size();i++) {
-					if (::lstrcmpi((*pExcludePlugins)[i],wfd.cFileName)==0) {
+					if (IsEqualFileName((*pExcludePlugins)[i],wfd.cFileName)) {
 						fExclude=true;
 						break;
 					}
@@ -2451,7 +2451,7 @@ int CPluginManager::FindPluginByFileName(LPCTSTR pszFileName) const
 	if (pszFileName==NULL)
 		return -1;
 	for (size_t i=0;i<m_PluginList.size();i++) {
-		if (::lstrcmpi(::PathFindFileName(m_PluginList[i]->GetFileName()),pszFileName)==0)
+		if (IsEqualFileName(::PathFindFileName(m_PluginList[i]->GetFileName()),pszFileName))
 			return (int)i;
 	}
 	return -1;
@@ -2992,7 +2992,7 @@ bool CPluginOptions::RestorePluginOptions()
 			CPlugin *pPlugin=m_pPluginManager->GetPlugin(j);
 
 			if (!pPlugin->IsDisableOnStart()
-					&& ::lstrcmpi(m_EnablePluginList[i],::PathFindFileName(pPlugin->GetFileName()))==0)
+					&& IsEqualFileName(m_EnablePluginList[i],::PathFindFileName(pPlugin->GetFileName())))
 				pPlugin->Enable(true);
 		}
 	}

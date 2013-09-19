@@ -137,12 +137,11 @@ bool CCoreEngine::GetDriverDirectory(LPTSTR pszDirectory,int MaxLength) const
 
 	if (m_szDriverDirectory[0]!='\0') {
 		if (::PathIsRelative(m_szDriverDirectory)) {
-			TCHAR szTemp[MAX_PATH],szPath[MAX_PATH];
+			TCHAR szBaseDir[MAX_PATH],szPath[MAX_PATH];
 
-			::GetModuleFileName(NULL,szTemp,lengthof(szTemp));
-			::PathRemoveFileSpec(szTemp);
-			if (!::PathAppend(szTemp,m_szDriverDirectory)
-					|| !::PathCanonicalize(szPath,szTemp)
+			::GetModuleFileName(NULL,szBaseDir,lengthof(szBaseDir));
+			::PathRemoveFileSpec(szBaseDir);
+			if (::PathCombine(szPath,szBaseDir,m_szDriverDirectory)==NULL
 					|| ::lstrlen(szPath)>=MaxLength)
 				return false;
 			::lstrcpy(pszDirectory,szPath);
@@ -198,8 +197,7 @@ bool CCoreEngine::GetDriverPath(LPTSTR pszPath,int MaxLength) const
 		TCHAR szDir[MAX_PATH],szPath[MAX_PATH];
 
 		if (!GetDriverDirectory(szDir,lengthof(szDir))
-				|| !::PathAppend(szDir,m_szDriverFileName)
-				|| !::PathCanonicalize(szPath,szDir)
+				|| ::PathCombine(szPath,szDir,m_szDriverFileName)==NULL
 				|| ::lstrlen(szPath)>=MaxLength)
 			return false;
 		::lstrcpy(pszPath,szPath);
@@ -267,8 +265,8 @@ bool CCoreEngine::IsNetworkDriverFileName(LPCTSTR pszFileName)
 
 	LPCTSTR pszName=::PathFindFileName(pszFileName);
 
-	if (::lstrcmpi(pszName,TEXT("BonDriver_UDP.dll"))==0
-			|| ::lstrcmpi(pszName,TEXT("BonDriver_TCP.dll"))==0)
+	if (IsEqualFileName(pszName,TEXT("BonDriver_UDP.dll"))
+			|| IsEqualFileName(pszName,TEXT("BonDriver_TCP.dll")))
 		return true;
 	return false;
 }
@@ -321,21 +319,6 @@ bool CCoreEngine::FindCasLibraries(LPCTSTR pszDirectory,std::vector<TVTest::Stri
 
 bool CCoreEngine::OpenCasCard(int Device,LPCTSTR pszName)
 {
-	if (Device==0 && IsStringEmpty(pszName) && IsDriverSpecified()) {
-		// 現在の BonDriver 専用の winscard.dll があればそれを利用する
-		TCHAR szFileName[MAX_PATH];
-
-		GetDriverPath(szFileName,lengthof(szFileName));
-		::PathRenameExtension(szFileName,TEXT(".scard"));
-		if (::PathFileExists(szFileName)) {
-			if (!m_DtvEngine.OpenCasCard(Device,szFileName)) {
-				SetError(m_DtvEngine.GetLastErrorException());
-				return false;
-			}
-			return true;
-		}
-	}
-
 	if (!m_DtvEngine.OpenCasCard(Device,pszName)) {
 		SetError(m_DtvEngine.GetLastErrorException());
 		return false;
@@ -364,16 +347,6 @@ bool CCoreEngine::CloseCasCard()
 bool CCoreEngine::IsCasCardOpen() const
 {
 	return m_DtvEngine.m_CasProcessor.IsCasCardOpen();
-}
-
-
-// ある BonDriver 専用の winscard.dll を使用しているか取得する
-bool CCoreEngine::IsDriverCardReader() const
-{
-	TCHAR szName[MAX_PATH];
-
-	return m_DtvEngine.m_CasProcessor.GetCasCardName(szName,lengthof(szName))>0
-		&& ::PathMatchSpec(szName,TEXT("*.scard"));
 }
 
 
@@ -561,7 +534,7 @@ bool CCoreEngine::SetDownMixSurround(bool fDownMix)
 }
 
 
-bool CCoreEngine::SetSpdifOptions(const CAacDecFilter::SpdifOptions &Options)
+bool CCoreEngine::SetSpdifOptions(const CAudioDecFilter::SpdifOptions &Options)
 {
 	m_SpdifOptions=Options;
 	m_DtvEngine.m_MediaViewer.SetSpdifOptions(&Options);
@@ -569,7 +542,7 @@ bool CCoreEngine::SetSpdifOptions(const CAacDecFilter::SpdifOptions &Options)
 }
 
 
-bool CCoreEngine::GetSpdifOptions(CAacDecFilter::SpdifOptions *pOptions) const
+bool CCoreEngine::GetSpdifOptions(CAudioDecFilter::SpdifOptions *pOptions) const
 {
 	if (pOptions==NULL)
 		return false;

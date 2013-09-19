@@ -25,7 +25,6 @@ public:
 		virtual void OnMenuSelected(int Command) {}
 		friend class CEventInfoPopup;
 	};
-	friend class CEventInfoHandler;
 
 	CEventInfoPopup();
 	~CEventInfoPopup();
@@ -70,6 +69,8 @@ private:
 
 	bool Create(HWND hwndParent,DWORD Style,DWORD ExStyle,int ID) override;
 	void SetEventInfo(const CEventInfoData *pEventInfo);
+	void FormatAudioInfo(const CEventInfoData::AudioInfo *pAudioInfo,
+						 LPTSTR pszText,int MaxLength) const;
 	void CalcTitleHeight();
 	void GetCloseButtonRect(RECT *pRect) const;
 };

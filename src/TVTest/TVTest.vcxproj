@@ -132,6 +132,12 @@
       </DataExecutionPrevention>
       <TargetMachine>MachineX86</TargetMachine>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>
+      </AdditionalManifestFiles>
+      <OutputManifestFile>$(IntDir)$(TargetName)$(TargetExt).embed.manifest</OutputManifestFile>
+      <EnableDPIAwareness>true</EnableDPIAwareness>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Midl>
@@ -175,6 +181,12 @@
       </DataExecutionPrevention>
       <TargetMachine>MachineX64</TargetMachine>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>
+      </AdditionalManifestFiles>
+      <OutputManifestFile>$(IntDir)$(TargetName)$(TargetExt).embed.manifest</OutputManifestFile>
+      <EnableDPIAwareness>true</EnableDPIAwareness>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <Midl>
@@ -225,6 +237,12 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>
+      </AdditionalManifestFiles>
+      <OutputManifestFile>$(IntDir)$(TargetName)$(TargetExt).embed.manifest</OutputManifestFile>
+      <EnableDPIAwareness>true</EnableDPIAwareness>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Midl>
@@ -275,6 +293,12 @@
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
     </Link>
+    <Manifest>
+      <AdditionalManifestFiles>
+      </AdditionalManifestFiles>
+      <OutputManifestFile>$(IntDir)$(TargetName)$(TargetExt).embed.manifest</OutputManifestFile>
+      <EnableDPIAwareness>true</EnableDPIAwareness>
+    </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="Accelerator.cpp" />
@@ -330,18 +354,20 @@
     <ClCompile Include="Dialog.cpp" />
     <ClCompile Include="DialogUtil.cpp" />
     <ClCompile Include="ChannelDisplay.cpp" />
+    <ClCompile Include="DirectShowFilter\AudioDecFilter.cpp" />
+    <ClCompile Include="DirectShowFilter\AudioDecoder.cpp" />
+    <ClCompile Include="DirectShowFilter\VideoParser.cpp" />
     <ClCompile Include="DrawUtil.cpp" />
     <ClCompile Include="DriverManager.cpp" />
     <ClCompile Include="DriverOptions.cpp" />
     <ClCompile Include="DtvEngine\DtvEngine.cpp" />
-    <ClCompile Include="DirectShowFilter\AacDecFilter.cpp" />
     <ClCompile Include="DirectShowFilter\AacDecoder.cpp" />
     <ClCompile Include="DirectShowFilter\BonSrcFilter.cpp" />
     <ClCompile Include="DirectShowFilter\BonSrcPin.cpp" />
     <ClCompile Include="DirectShowFilter\DirectShowUtil.cpp" />
     <ClCompile Include="DirectShowFilter\EVRenderer.cpp" />
     <ClCompile Include="DirectShowFilter\ImageMixer.cpp" />
-    <ClCompile Include="DirectShowFilter\Mpeg2SequenceFilter.cpp" />
+    <ClCompile Include="DirectShowFilter\Mpeg2ParserFilter.cpp" />
     <ClCompile Include="DirectShowFilter\TsSrcStream.cpp" />
     <ClCompile Include="DirectShowFilter\VideoRenderer.cpp" />
     <ClCompile Include="DirectShowFilter\VMR9Renderless.cpp" />
@@ -468,6 +494,7 @@
     <ClInclude Include="ColorScheme.h" />
     <ClInclude Include="Command.h" />
     <ClInclude Include="CommandLine.h" />
+    <ClInclude Include="Common.h" />
     <ClInclude Include="Controller.h" />
     <ClInclude Include="ControlPanel.h" />
     <ClInclude Include="ControlPanelItems.h" />
@@ -476,20 +503,21 @@
     <ClInclude Include="Dialog.h" />
     <ClInclude Include="DialogUtil.h" />
     <ClInclude Include="ChannelDisplay.h" />
+    <ClInclude Include="DirectShowFilter\AudioDecFilter.h" />
+    <ClInclude Include="DirectShowFilter\AudioDecoder.h" />
+    <ClInclude Include="DirectShowFilter\VideoParser.h" />
     <ClInclude Include="DrawUtil.h" />
     <ClInclude Include="DriverManager.h" />
     <ClInclude Include="DriverOptions.h" />
     <ClInclude Include="DtvEngine\DtvEngine.h" />
-    <ClInclude Include="DirectShowFilter\AacDecFilter.h" />
     <ClInclude Include="DirectShowFilter\AacDecoder.h" />
     <ClInclude Include="DirectShowFilter\BonSrcFilter.h" />
     <ClInclude Include="DirectShowFilter\BonSrcPin.h" />
     <ClInclude Include="DirectShowFilter\DirectShowUtil.h" />
     <ClInclude Include="DirectShowFilter\EVRenderer.h" />
     <ClInclude Include="DirectShowFilter\ImageMixer.h" />
-    <ClInclude Include="DirectShowFilter\Mpeg2SequenceFilter.h" />
+    <ClInclude Include="DirectShowFilter\Mpeg2ParserFilter.h" />
     <ClInclude Include="DirectShowFilter\TsSrcStream.h" />
-    <ClInclude Include="DirectShowFilter\VideoInfo.h" />
     <ClInclude Include="DirectShowFilter\VideoRenderer.h" />
     <ClInclude Include="DirectShowFilter\VMR9Renderless.h" />
     <ClInclude Include="EpgChannelSettings.h" />

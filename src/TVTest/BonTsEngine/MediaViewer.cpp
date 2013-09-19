@@ -19,11 +19,14 @@ static char THIS_FILE[]=__FILE__;
 //const CLSID CLSID_NullRenderer = {0xc1f400a4, 0x3f08, 0x11d3, {0x9f, 0x0b, 0x00, 0x60, 0x08, 0x03, 0x9e, 0x37}};
 EXTERN_C const CLSID CLSID_NullRenderer;
 
-#define LOCK_TIMEOUT 2000
+static const DWORD LOCK_TIMEOUT = 2000;
 
 
 static HRESULT SetVideoMediaType(CMediaType *pMediaType, int Width, int Height)
 {
+#ifndef BONTSENGINE_H264_SUPPORT
+	// MPEG-2
+
 	// 映像メディアフォーマット設定
 	pMediaType->InitMediaType();
 	pMediaType->SetType(&MEDIATYPE_Video);
@@ -33,15 +36,40 @@ static HRESULT SetVideoMediaType(CMediaType *pMediaType, int Width, int Height)
 	pMediaType->SetSampleSize(0);
 	pMediaType->SetFormatType(&FORMAT_MPEG2Video);
 	// フォーマット構造体確保
-	MPEG2VIDEOINFO *pVideoInfo = (MPEG2VIDEOINFO *)pMediaType->AllocFormatBuffer(sizeof(MPEG2VIDEOINFO));
+	MPEG2VIDEOINFO *pVideoInfo =
+		pointer_cast<MPEG2VIDEOINFO *>(pMediaType->AllocFormatBuffer(sizeof(MPEG2VIDEOINFO)));
 	if (!pVideoInfo)
 		return E_OUTOFMEMORY;
 	::ZeroMemory(pVideoInfo, sizeof(MPEG2VIDEOINFO));
 	// ビデオヘッダ設定
 	VIDEOINFOHEADER2 &VideoHeader = pVideoInfo->hdr;
 	//::SetRect(&VideoHeader.rcSource, 0, 0, Width, Height);
+	VideoHeader.bmiHeader.biSize = sizeof(BITMAPINFOHEADER); 
 	VideoHeader.bmiHeader.biWidth = Width;
 	VideoHeader.bmiHeader.biHeight = Height;
+#else
+	// H.264
+	// (適当でおk)
+	pMediaType->InitMediaType();
+	pMediaType->SetType(&MEDIATYPE_Video);
+	pMediaType->SetSubtype(&MEDIASUBTYPE_H264);
+	pMediaType->SetVariableSize();
+	pMediaType->SetTemporalCompression(TRUE);
+	pMediaType->SetSampleSize(0);
+	pMediaType->SetFormatType(&FORMAT_VideoInfo);
+	VIDEOINFOHEADER *pVideoInfo =
+		pointer_cast<VIDEOINFOHEADER *>(pMediaType->AllocFormatBuffer(sizeof(VIDEOINFOHEADER)));
+	if (!pVideoInfo)
+		return E_OUTOFMEMORY;
+	::ZeroMemory(pVideoInfo, sizeof(VIDEOINFOHEADER));
+	pVideoInfo->dwBitRate = 32000000;
+	pVideoInfo->AvgTimePerFrame = 10000000LL * 1001LL / 30000LL;
+	pVideoInfo->bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+	pVideoInfo->bmiHeader.biWidth = Width;
+	pVideoInfo->bmiHeader.biHeight = Height;
+	pVideoInfo->bmiHeader.biCompression = MAKEFOURCC('h','2','6','4');
+#endif
+
 	return S_OK;
 }
 
@@ -59,7 +87,7 @@ CMediaViewer::CMediaViewer(IEventHandler *pEventHandler)
 
 	, m_pSrcFilter(NULL)
 
-	, m_pAacDecoder(NULL)
+	, m_pAudioDecoder(NULL)
 
 	, m_pVideoDecoderFilter(NULL)
 
@@ -70,7 +98,7 @@ CMediaViewer::CMediaViewer(IEventHandler *pEventHandler)
 	, m_pAudioFilter(NULL)
 
 #ifndef BONTSENGINE_H264_SUPPORT
-	, m_pMpeg2Sequence(NULL)
+	, m_pMpeg2Parser(NULL)
 #else
 	, m_pH264Parser(NULL)
 #endif
@@ -87,7 +115,6 @@ CMediaViewer::CMediaViewer(IEventHandler *pEventHandler)
 	, m_wVideoWindowX(0)
 	, m_wVideoWindowY(0)
 	, m_VideoInfo()
-	, m_DemuxerMediaWidth(0)
 	, m_hOwnerWnd(NULL)
 #ifdef _DEBUG
 	, m_dwRegister(0)
@@ -192,8 +219,8 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 	try {
 		// フィルタグラフマネージャを構築する
 		hr=::CoCreateInstance(CLSID_FilterGraph,NULL,CLSCTX_INPROC_SERVER,
-				IID_IGraphBuilder,reinterpret_cast<LPVOID*>(&m_pFilterGraph));
-		if (hr != S_OK) {
+				IID_IGraphBuilder,pointer_cast<LPVOID*>(&m_pFilterGraph));
+		if (FAILED(hr)) {
 			throw CBonException(hr,TEXT("フィルタグラフマネージャを作成できません。"));
 		}
 #ifdef _DEBUG
@@ -201,8 +228,8 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 #endif
 
 		// IMediaControlインタフェースのクエリー
-		hr=m_pFilterGraph->QueryInterface(IID_IMediaControl, reinterpret_cast<LPVOID*>(&m_pMediaControl));
-		if (hr != S_OK) {
+		hr=m_pFilterGraph->QueryInterface(IID_IMediaControl, pointer_cast<void**>(&m_pMediaControl));
+		if (FAILED(hr)) {
 			throw CBonException(hr,TEXT("メディアコントロールを取得できません。"));
 		}
 
@@ -212,12 +239,12 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 		{
 			// インスタンス作成
 			m_pSrcFilter = static_cast<CBonSrcFilter*>(CBonSrcFilter::CreateInstance(NULL, &hr));
-			if (m_pSrcFilter == NULL || hr != S_OK)
+			if (m_pSrcFilter == NULL || FAILED(hr))
 				throw CBonException(hr, TEXT("ソースフィルタを作成できません。"));
 			m_pSrcFilter->SetOutputWhenPaused(RendererType == CVideoRenderer::RENDERER_DEFAULT);
 			// フィルタグラフに追加
 			hr = m_pFilterGraph->AddFilter(m_pSrcFilter, L"BonSrcFilter");
-			if (hr != S_OK)
+			if (FAILED(hr))
 				throw CBonException(hr, TEXT("ソースフィルタをフィルタグラフに追加できません。"));
 			// 出力ピンを取得
 			pOutput = DirectShowUtil::GetFilterPin(m_pSrcFilter, PINDIR_OUTPUT);
@@ -236,8 +263,8 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 
 			hr=::CoCreateInstance(CLSID_MPEG2Demultiplexer,NULL,
 					CLSCTX_INPROC_SERVER,IID_IBaseFilter,
-					reinterpret_cast<LPVOID*>(&m_pMp2DemuxFilter));
-			if (hr!=S_OK)
+					pointer_cast<LPVOID*>(&m_pMp2DemuxFilter));
+			if (FAILED(hr))
 				throw CBonException(hr,TEXT("MPEG-2 Demultiplexerフィルタを作成できません。"),
 									TEXT("MPEG-2 Demultiplexerフィルタがインストールされているか確認してください。"));
 			hr=DirectShowUtil::AppendFilterAndConnect(m_pFilterGraph,
@@ -247,33 +274,15 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 			// この時点でpOutput==NULLのはずだが念のため
 			SAFE_RELEASE(pOutput);
 
-#if 0
-			/*
-				このコードは元々のBonTestからあるコードで意図は分からないが
-				やらなくても問題無さそう
-			*/
-			// IReferenceClockインタフェースのクエリー
-			IReferenceClock *pMp2DemuxRefClock;
-			hr=m_pMp2DemuxFilter->QueryInterface(IID_IReferenceClock,
-						reinterpret_cast<LPVOID*>(&pMp2DemuxRefClock));
-			if (hr != S_OK)
-				throw CBonException(hr,TEXT("IReferenceClockを取得できません。"));
-			// リファレンスクロック選択
-			hr=m_pMp2DemuxFilter->SetSyncSource(pMp2DemuxRefClock);
-			pMp2DemuxRefClock->Release();
-			if (hr != S_OK)
-				throw CBonException(hr,TEXT("リファレンスクロックを設定できません。"))
-#endif
-
 			// IMpeg2Demultiplexerインタフェースのクエリー
 			hr=m_pMp2DemuxFilter->QueryInterface(IID_IMpeg2Demultiplexer,
-									reinterpret_cast<LPVOID*>(&pMpeg2Demuxer));
+												 pointer_cast<void**>(&pMpeg2Demuxer));
 			if (FAILED(hr))
 				throw CBonException(hr,TEXT("MPEG-2 Demultiplexerインターフェースを取得できません。"),
 									TEXT("互換性のないスプリッタの優先度がMPEG-2 Demultiplexerより高くなっている可能性があります。"));
 
 			// 映像メディアフォーマット設定
-			hr = SetVideoMediaType(&MediaTypeVideo, 720, 480);
+			hr = SetVideoMediaType(&MediaTypeVideo, 1920, 1080);
 			if (FAILED(hr))
 				throw CBonException(TEXT("メモリが確保できません。"));
 			// 映像出力ピン作成
@@ -282,7 +291,6 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 				pMpeg2Demuxer->Release();
 				throw CBonException(hr, TEXT("MPEG-2 Demultiplexerの映像出力ピンを作成できません。"));
 			}
-			m_DemuxerMediaWidth = 720;
 			// 音声メディアフォーマット設定
 			MediaTypeAudio.InitMediaType();
 			MediaTypeAudio.SetType(&MEDIATYPE_Audio);
@@ -294,35 +302,35 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 			// 音声出力ピン作成
 			hr=pMpeg2Demuxer->CreateOutputPin(&MediaTypeAudio,L"Audio",&pOutputAudio);
 			pMpeg2Demuxer->Release();
-			if (hr != S_OK)
+			if (FAILED(hr))
 				throw CBonException(hr,TEXT("MPEG-2 Demultiplexerの音声出力ピンを作成できません。"));
 			// 映像出力ピンのIMPEG2PIDMapインタフェースのクエリー
-			hr=pOutputVideo->QueryInterface(__uuidof(IMPEG2PIDMap),(void**)&m_pMp2DemuxVideoMap);
-			if (hr != S_OK)
+			hr=pOutputVideo->QueryInterface(__uuidof(IMPEG2PIDMap),pointer_cast<void**>(&m_pMp2DemuxVideoMap));
+			if (FAILED(hr))
 				throw CBonException(hr,TEXT("映像出力ピンのIMPEG2PIDMapを取得できません。"));
 			// 音声出力ピンのIMPEG2PIDMapインタフェースのクエリ
-			hr=pOutputAudio->QueryInterface(__uuidof(IMPEG2PIDMap),(void**)&m_pMp2DemuxAudioMap);
-			if (hr != S_OK)
+			hr=pOutputAudio->QueryInterface(__uuidof(IMPEG2PIDMap),pointer_cast<void**>(&m_pMp2DemuxAudioMap));
+			if (FAILED(hr))
 				throw CBonException(hr,TEXT("音声出力ピンのIMPEG2PIDMapを取得できません。"));
 		}
 
 #ifndef BONTSENGINE_H264_SUPPORT
-		Trace(TEXT("MPEG-2シーケンスフィルタの接続中..."));
+		Trace(TEXT("MPEG-2パーサフィルタの接続中..."));
 
-		/* CMpeg2SequenceFilter */
+		/* CMpeg2ParserFilter */
 		{
 			// インスタンス作成
-			m_pMpeg2Sequence = static_cast<CMpeg2SequenceFilter*>(CMpeg2SequenceFilter::CreateInstance(NULL, &hr));
-			if((!m_pMpeg2Sequence) || (hr != S_OK))
-				throw CBonException(hr,TEXT("MPEG-2シーケンスフィルタを作成できません。"));
-			m_pMpeg2Sequence->SetRecvCallback(OnMpeg2VideoInfo,this);
+			m_pMpeg2Parser = static_cast<CMpeg2ParserFilter*>(CMpeg2ParserFilter::CreateInstance(NULL, &hr));
+			if ((!m_pMpeg2Parser) || FAILED(hr))
+				throw CBonException(hr,TEXT("MPEG-2パーサフィルタを作成できません。"));
+			m_pMpeg2Parser->SetVideoInfoCallback(OnVideoInfo,this);
 			// madVR は映像サイズの変化時に MediaType を設定しないと新しいサイズが適用されない
-			m_pMpeg2Sequence->SetAttachMediaType(RendererType==CVideoRenderer::RENDERER_madVR);
+			m_pMpeg2Parser->SetAttachMediaType(RendererType==CVideoRenderer::RENDERER_madVR);
 			// フィルタの追加と接続
-			hr=DirectShowUtil::AppendFilterAndConnect(m_pFilterGraph,
-						m_pMpeg2Sequence,L"Mpeg2SequenceFilter",&pOutputVideo);
+			hr=DirectShowUtil::AppendFilterAndConnect(
+				m_pFilterGraph,m_pMpeg2Parser,L"Mpeg2ParserFilter",&pOutputVideo);
 			if (FAILED(hr))
-				throw CBonException(hr,TEXT("MPEG-2シーケンスフィルタをフィルタグラフに追加できません。"));
+				throw CBonException(hr,TEXT("MPEG-2パーサフィルタをフィルタグラフに追加できません。"));
 		}
 #else
 		Trace(TEXT("H.264パーサフィルタの接続中..."));
@@ -331,40 +339,40 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 		{
 			// インスタンス作成
 			m_pH264Parser = static_cast<CH264ParserFilter*>(CH264ParserFilter::CreateInstance(NULL, &hr));
-			if((!m_pH264Parser) || (hr != S_OK))
+			if ((!m_pH264Parser) || FAILED(hr))
 				throw CBonException(TEXT("H.264パーサフィルタを作成できません。"));
-			m_pH264Parser->SetVideoInfoCallback(OnMpeg2VideoInfo,this);
+			m_pH264Parser->SetVideoInfoCallback(OnVideoInfo,this);
 			m_pH264Parser->SetAdjustTime(m_bAdjustVideoSampleTime);
 			m_pH264Parser->SetAdjustFrameRate(m_bAdjustFrameRate);
 			// madVR は映像サイズの変化時に MediaType を設定しないと新しいサイズが適用されない
 			m_pH264Parser->SetAttachMediaType(RendererType==CVideoRenderer::RENDERER_madVR);
 			// フィルタの追加と接続
-			hr=DirectShowUtil::AppendFilterAndConnect(m_pFilterGraph,
-							m_pH264Parser,L"H264ParserFilter",&pOutputVideo);
+			hr=DirectShowUtil::AppendFilterAndConnect(
+				m_pFilterGraph,m_pH264Parser,L"H264ParserFilter",&pOutputVideo);
 			if (FAILED(hr))
 				throw CBonException(hr,TEXT("H.264パーサフィルタをフィルタグラフに追加できません。"));
 		}
 #endif	// BONTSENGINE_H264_SUPPORT
 
-		Trace(TEXT("AACデコーダの接続中..."));
+		Trace(TEXT("音声デコーダの接続中..."));
 
 #if 1
-		/* CAacDecFilter */
+		/* CAudioDecFilter */
 		{
-			// CAacDecFilterインスタンス作成
-			m_pAacDecoder = static_cast<CAacDecFilter*>(CAacDecFilter::CreateInstance(NULL, &hr));
-			if (!m_pAacDecoder || hr!=S_OK)
-				throw CBonException(hr,TEXT("AACデコーダフィルタを作成できません。"));
+			// CAudioDecFilterインスタンス作成
+			m_pAudioDecoder = static_cast<CAudioDecFilter*>(CAudioDecFilter::CreateInstance(NULL, &hr));
+			if (!m_pAudioDecoder || FAILED(hr))
+				throw CBonException(hr,TEXT("音声デコーダフィルタを作成できません。"));
 			// フィルタの追加と接続
-			hr=DirectShowUtil::AppendFilterAndConnect(m_pFilterGraph,
-								m_pAacDecoder,L"AacDecFilter",&pOutputAudio);
+			hr=DirectShowUtil::AppendFilterAndConnect(
+				m_pFilterGraph,m_pAudioDecoder,L"AudioDecFilter",&pOutputAudio);
 			if (FAILED(hr))
-				throw CBonException(hr,TEXT("AACデコーダフィルタをフィルタグラフに追加できません。"));
+				throw CBonException(hr,TEXT("音声デコーダフィルタをフィルタグラフに追加できません。"));
 
-			m_pAacDecoder->SetAdjustStreamTime(m_bAdjustAudioStreamTime);
+			m_pAudioDecoder->SetJitterCorrection(m_bAdjustAudioStreamTime);
 			if (m_pAudioStreamCallback)
-				m_pAacDecoder->SetStreamCallback(m_pAudioStreamCallback,
-												 m_pAudioStreamCallbackParam);
+				m_pAudioDecoder->SetStreamCallback(m_pAudioStreamCallback,
+												   m_pAudioStreamCallbackParam);
 		}
 #else
 		/*
@@ -377,11 +385,11 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 			CAacParserFilter *m_pAacParser;
 			// CAacParserFilterインスタンス作成
 			m_pAacParser=static_cast<CAacParserFilter*>(CAacParserFilter::CreateInstance(NULL, &hr));
-			if (!m_pAacParser || hr!=S_OK)
+			if (!m_pAacParser || FAILED(hr))
 				throw CBonException(hr,TEXT("AACパーサフィルタを作成できません。"));
 			// フィルタの追加と接続
-			hr=DirectShowUtil::AppendFilterAndConnect(m_pFilterGraph,
-								m_pAacParser,L"AacParserFilter",&pOutputAudio);
+			hr=DirectShowUtil::AppendFilterAndConnect(
+				m_pFilterGraph,m_pAacParser,L"AacParserFilter",&pOutputAudio);
 			if (FAILED(hr))
 				throw CBonException(TEXT("AACパーサフィルタをフィルタグラフに追加できません。"));
 			m_pAacParser->Release();
@@ -499,14 +507,14 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 			}
 		}
 
-#ifndef MPEG2SEQUENCEFILTER_INPLACE
+#ifndef MPEG2PARSERFILTER_INPLACE
 		/*
 			CyberLinkのデコーダとデフォルトレンダラの組み合わせで
 			1080x1080(4:3)の映像が正方形に表示される問題に対応
 			…しようと思ったが変になるので保留
 		*/
 		if (::StrStrI(m_pszVideoDecoderName, TEXT("CyberLink")) != NULL)
-			m_pMpeg2Sequence->SetFixSquareDisplay(true);
+			m_pMpeg2Parser->SetFixSquareDisplay(true);
 #endif
 #else	// ndef BONTSENGINE_H264_SUPPORT
 		Trace(TEXT("H.264デコーダの接続中..."));
@@ -577,8 +585,8 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 			}
 			if (!fOK) {
 				hr = ::CoCreateInstance(CLSID_DSoundRender, NULL,
-									CLSCTX_INPROC_SERVER, IID_IBaseFilter,
-									reinterpret_cast<void**>(&m_pAudioRenderer));
+										CLSCTX_INPROC_SERVER, IID_IBaseFilter,
+										pointer_cast<LPVOID*>(&m_pAudioRenderer));
 				if (SUCCEEDED(hr)) {
 					m_pszAudioRendererName=StdUtil::strdup(TEXT("DirectSound Renderer"));
 					fOK = true;
@@ -596,11 +604,11 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 						IMediaFilter *pMediaFilter;
 
 						if (SUCCEEDED(m_pFilterGraph->QueryInterface(IID_IMediaFilter,
-								reinterpret_cast<LPVOID*>(&pMediaFilter)))) {
+								pointer_cast<void**>(&pMediaFilter)))) {
 							IReferenceClock *pReferenceClock;
 
 							if (SUCCEEDED(m_pAudioRenderer->QueryInterface(IID_IReferenceClock,
-									reinterpret_cast<LPVOID*>(&pReferenceClock)))) {
+									pointer_cast<void**>(&pReferenceClock)))) {
 								pMediaFilter->SetSyncSource(pReferenceClock);
 								pReferenceClock->Release();
 								TRACE(TEXT("グラフのクロックに音声レンダラを選択\n"));
@@ -623,7 +631,7 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 				// Nullレンダラを繋げておく
 				hr = ::CoCreateInstance(CLSID_NullRenderer, NULL,
 										CLSCTX_INPROC_SERVER, IID_IBaseFilter,
-										reinterpret_cast<void**>(&m_pAudioRenderer));
+										pointer_cast<LPVOID*>(&m_pAudioRenderer));
 				if (SUCCEEDED(hr)) {
 					hr = DirectShowUtil::AppendFilterAndConnect(m_pFilterGraph,
 						m_pAudioRenderer, L"Null Audio Renderer", &pOutputAudio);
@@ -643,12 +651,12 @@ const bool CMediaViewer::OpenViewer(HWND hOwnerHwnd, HWND hMessageDrainHwnd,
 		if (!m_bUseAudioRendererClock) {
 			IMediaFilter *pMediaFilter;
 
-			if (SUCCEEDED(m_pFilterGraph->QueryInterface(IID_IMediaFilter,
-								reinterpret_cast<LPVOID*>(&pMediaFilter)))) {
+			if (SUCCEEDED(m_pFilterGraph->QueryInterface(
+					IID_IMediaFilter,pointer_cast<void**>(&pMediaFilter)))) {
 				IReferenceClock *pReferenceClock;
 
-				if (SUCCEEDED(m_pMp2DemuxFilter->QueryInterface(IID_IReferenceClock,
-							reinterpret_cast<LPVOID*>(&pReferenceClock)))) {
+				if (SUCCEEDED(m_pMp2DemuxFilter->QueryInterface(
+						IID_IReferenceClock,pointer_cast<void**>(&pReferenceClock)))) {
 					pMediaFilter->SetSyncSource(pReferenceClock);
 					pReferenceClock->Release();
 					TRACE(TEXT("グラフのクロックにMPEG-2 Demultiplexerを選択\n"));
@@ -741,12 +749,12 @@ void CMediaViewer::CloseViewer(void)
 
 	SAFE_RELEASE(m_pVideoDecoderFilter);
 
-	SAFE_RELEASE(m_pAacDecoder);
+	SAFE_RELEASE(m_pAudioDecoder);
 
 	SAFE_RELEASE(m_pAudioRenderer);
 
 #ifndef BONTSENGINE_H264_SUPPORT
-	SAFE_RELEASE(m_pMpeg2Sequence);
+	SAFE_RELEASE(m_pMpeg2Parser);
 #else
 	SAFE_RELEASE(m_pH264Parser);
 #endif
@@ -967,7 +975,7 @@ const WORD CMediaViewer::GetAudioPID(void) const
 	return m_wAudioEsPID;
 }
 
-void CMediaViewer::OnMpeg2VideoInfo(const CMpeg2VideoInfo *pVideoInfo,const LPVOID pParam)
+void CMediaViewer::OnVideoInfo(const CVideoParser::VideoInfo *pVideoInfo,const LPVOID pParam)
 {
 	// ビデオ情報の更新
 	CMediaViewer *pThis=static_cast<CMediaViewer*>(pParam);
@@ -979,33 +987,6 @@ void CMediaViewer::OnMpeg2VideoInfo(const CMpeg2VideoInfo *pVideoInfo,const LPVO
 		pThis->m_VideoInfo = *pVideoInfo;
 		//pThis->AdjustVideoPosition();
 	}
-
-#if 0
-	/*
-		試しに新しいサイズを反映させる処理を入れてみたが、
-		これをやると切り替わり時に画面が崩れてしまう
-	*/
-	if (pThis->m_pMp2DemuxFilter
-			&& pThis->m_DemuxerMediaWidth != pVideoInfo->m_OrigWidth) {
-		IMpeg2Demultiplexer *pDemuxer;
-
-		if (SUCCEEDED(pThis->m_pMp2DemuxFilter->QueryInterface(
-									IID_IMpeg2Demultiplexer,
-									reinterpret_cast<LPVOID*>(&pDemuxer)))) {
-			CMediaType MediaType;
-
-			if (SUCCEEDED(SetVideoMediaType(&MediaType,
-											pVideoInfo->m_OrigWidth,
-											pVideoInfo->m_OrigHeight))) {
-				TRACE(TEXT("IMpeg2Demultiplexer::SetOutputPinMediaType() : Video %d x %d\n"),
-					  pVideoInfo->m_OrigWidth, pVideoInfo->m_OrigHeight);
-				if (SUCCEEDED(pDemuxer->SetOutputPinMediaType(L"Video", &MediaType)))
-					pThis->m_DemuxerMediaWidth = pVideoInfo->m_OrigWidth;
-			}
-			pDemuxer->Release();
-		}
-	}
-#endif
 
 	pThis->SendDecoderEvent(EID_VIDEO_SIZE_CHANGED);
 }
@@ -1138,8 +1119,8 @@ const bool CMediaViewer::SetVolume(const float fVolume)
 	bool fOK=false;
 
 	if (m_pFilterGraph) {
-		if (SUCCEEDED(m_pFilterGraph->QueryInterface(IID_IBasicAudio,
-								reinterpret_cast<LPVOID *>(&pBasicAudio)))) {
+		if (SUCCEEDED(m_pFilterGraph->QueryInterface(
+				IID_IBasicAudio, pointer_cast<void**>(&pBasicAudio)))) {
 			long lVolume = (long)(fVolume * 100.0f);
 
 			if (lVolume>=-10000 && lVolume<=0) {
@@ -1161,10 +1142,6 @@ const bool CMediaViewer::GetVideoSize(WORD *pwWidth,WORD *pwHeight)
 	CBlockLock Lock(&m_ResizeLock);
 
 	// ビデオのサイズを取得する
-	/*
-	if (m_pMpeg2Sequence)
-		return m_pMpeg2Sequence->GetVideoSize(pwWidth,pwHeight);
-	*/
 	if (m_VideoInfo.m_DisplayWidth > 0 && m_VideoInfo.m_DisplayHeight > 0) {
 		if (pwWidth)
 			*pwWidth = m_VideoInfo.m_DisplayWidth;
@@ -1180,10 +1157,6 @@ const bool CMediaViewer::GetVideoAspectRatio(BYTE *pbyAspectRatioX,BYTE *pbyAspe
 	CBlockLock Lock(&m_ResizeLock);
 
 	// ビデオのアスペクト比を取得する
-	/*
-	if (m_pMpeg2Sequence)
-		return m_pMpeg2Sequence->GetAspectRatio(pbyAspectRatioX, pbyAspectRatioY);
-	*/
 	if (m_VideoInfo.m_AspectRatioX > 0 && m_VideoInfo.m_AspectRatioY > 0) {
 		if (pbyAspectRatioX)
 			*pbyAspectRatioX = m_VideoInfo.m_AspectRatioX;
@@ -1197,24 +1170,24 @@ const bool CMediaViewer::GetVideoAspectRatio(BYTE *pbyAspectRatioX,BYTE *pbyAspe
 const BYTE CMediaViewer::GetAudioChannelNum()
 {
 	// オーディオの入力チャンネル数を取得する
-	if (m_pAacDecoder)
-		return m_pAacDecoder->GetCurrentChannelNum();
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->GetCurrentChannelNum();
 	return AUDIO_CHANNEL_INVALID;
 }
 
 const bool CMediaViewer::SetStereoMode(const int iMode)
 {
 	// ステレオ出力チャンネルの設定
-	if (m_pAacDecoder)
-		return m_pAacDecoder->SetStereoMode(iMode);
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->SetStereoMode(iMode);
 	return false;
 }
 
 const int CMediaViewer::GetStereoMode() const
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->GetStereoMode();
-	return CAacDecFilter::STEREOMODE_STEREO;
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->GetStereoMode();
+	return CAudioDecFilter::STEREOMODE_STEREO;
 }
 
 const bool CMediaViewer::GetVideoDecoderName(LPWSTR lpName,int iBufLen)
@@ -1467,10 +1440,6 @@ const bool CMediaViewer::GetOriginalVideoSize(WORD *pWidth,WORD *pHeight)
 {
 	CBlockLock Lock(&m_ResizeLock);
 
-	/*
-	if (m_pMpeg2Sequence)
-		return m_pMpeg2Sequence->GetOriginalVideoSize(pWidth, pHeight);
-	*/
 	if (m_VideoInfo.m_OrigWidth > 0 && m_VideoInfo.m_OrigHeight > 0) {
 		if (pWidth)
 			*pWidth = m_VideoInfo.m_OrigWidth;
@@ -1597,59 +1566,59 @@ const bool CMediaViewer::GetCurrentImage(BYTE **ppDib)
 }
 
 
-bool CMediaViewer::SetSpdifOptions(const CAacDecFilter::SpdifOptions *pOptions)
+bool CMediaViewer::SetSpdifOptions(const CAudioDecFilter::SpdifOptions *pOptions)
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->SetSpdifOptions(pOptions);
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->SetSpdifOptions(pOptions);
 	return false;
 }
 
 
-bool CMediaViewer::GetSpdifOptions(CAacDecFilter::SpdifOptions *pOptions) const
+bool CMediaViewer::GetSpdifOptions(CAudioDecFilter::SpdifOptions *pOptions) const
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->GetSpdifOptions(pOptions);
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->GetSpdifOptions(pOptions);
 	return false;
 }
 
 
 bool CMediaViewer::IsSpdifPassthrough() const
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->IsSpdifPassthrough();
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->IsSpdifPassthrough();
 	return false;
 }
 
 
 bool CMediaViewer::SetAutoStereoMode(int Mode)
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->SetAutoStereoMode(Mode);
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->SetAutoStereoMode(Mode);
 	return false;
 }
 
 
 bool CMediaViewer::SetDownMixSurround(bool bDownMix)
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->SetDownMixSurround(bDownMix);
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->SetDownMixSurround(bDownMix);
 	return false;
 }
 
 
 bool CMediaViewer::GetDownMixSurround() const
 {
-	if (m_pAacDecoder)
-		return m_pAacDecoder->GetDownMixSurround();
+	if (m_pAudioDecoder)
+		return m_pAudioDecoder->GetDownMixSurround();
 	return false;
 }
 
 
 bool CMediaViewer::SetAudioGainControl(bool bGainControl, float Gain, float SurroundGain)
 {
-	if (m_pAacDecoder==NULL)
+	if (m_pAudioDecoder==NULL)
 		return false;
-	return m_pAacDecoder->SetGainControl(bGainControl, Gain, SurroundGain);
+	return m_pAudioDecoder->SetGainControl(bGainControl, Gain, SurroundGain);
 }
 
 
@@ -1669,19 +1638,19 @@ bool CMediaViewer::SetUseAudioRendererClock(bool bUse)
 bool CMediaViewer::SetAdjustAudioStreamTime(bool bAdjust)
 {
 	m_bAdjustAudioStreamTime = bAdjust;
-	if (m_pAacDecoder == NULL)
+	if (m_pAudioDecoder == NULL)
 		return true;
-	return m_pAacDecoder->SetAdjustStreamTime(bAdjust);
+	return m_pAudioDecoder->SetJitterCorrection(bAdjust);
 }
 
 
-bool CMediaViewer::SetAudioStreamCallback(CAacDecFilter::StreamCallback pCallback, void *pParam)
+bool CMediaViewer::SetAudioStreamCallback(CAudioDecFilter::StreamCallback pCallback, void *pParam)
 {
 	m_pAudioStreamCallback=pCallback;
 	m_pAudioStreamCallbackParam=pParam;
-	if (m_pAacDecoder == NULL)
+	if (m_pAudioDecoder == NULL)
 		return true;
-	return m_pAacDecoder->SetStreamCallback(pCallback, pParam);
+	return m_pAudioDecoder->SetStreamCallback(pCallback, pParam);
 }
 
 
@@ -1803,8 +1772,8 @@ bool CMediaViewer::SetAdjustFrameRate(bool bAdjust)
 
 DWORD CMediaViewer::GetAudioBitRate() const
 {
-	if (m_pAacDecoder != NULL)
-		return m_pAacDecoder->GetBitRate();
+	if (m_pAudioDecoder != NULL)
+		return m_pAudioDecoder->GetBitRate();
 	return 0;
 }
 
@@ -1812,8 +1781,8 @@ DWORD CMediaViewer::GetAudioBitRate() const
 DWORD CMediaViewer::GetVideoBitRate() const
 {
 #ifndef BONTSENGINE_H264_SUPPORT
-	if (m_pMpeg2Sequence != NULL)
-		return m_pMpeg2Sequence->GetBitRate();
+	if (m_pMpeg2Parser != NULL)
+		return m_pMpeg2Parser->GetBitRate();
 #else
 	if (m_pH264Parser != NULL)
 		return m_pH264Parser->GetBitRate();

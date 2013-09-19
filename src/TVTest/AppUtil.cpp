@@ -121,7 +121,7 @@ BOOL CALLBACK CTVTestWindowFinder::FindWindowCallback(HWND hwnd,LPARAM lParam)
 		hProcess=::OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ,FALSE,ProcessId);
 		if (hProcess!=NULL
 				&& ::GetModuleFileNameEx(hProcess,NULL,szFileName,lengthof(szFileName))>0
-				&& ::lstrcmpi(szFileName,pThis->m_szModuleFileName)==0) {
+				&& IsEqualFileName(szFileName,pThis->m_szModuleFileName)) {
 			pThis->m_hwndFound=hwnd;
 			::CloseHandle(hProcess);
 			return FALSE;

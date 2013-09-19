@@ -2,20 +2,21 @@
 //
 //////////////////////////////////////////////////////////////////////
 
+/*
+	Ç±ÇÃÉNÉâÉXÇÕstubÇ≈Ç∑
+	CASèàóùÇÕé¿ëïÇ≥ÇÍÇƒÇ¢Ç‹ÇπÇÒ
+*/
+
 #pragma once
 
 
 #include <vector>
 #include <string>
 #include "MediaDecoder.h"
-#include "TsUtilClass.h"
-#include "TVCAS.h"
 
 
 class CCasProcessor
 	: public CMediaDecoder
-	, public TVCAS::ICasClient
-	, protected TVCAS::Helper::CBaseImplNoRef
 {
 public:
 	enum {
@@ -26,11 +27,52 @@ public:
 		EVENT_CARD_READER_HUNG = 0x00000005UL
 	};
 
-	typedef TVCAS::ModuleInfo CasModuleInfo;
-	typedef TVCAS::EcmErrorInfo EcmErrorInfo;
-	typedef TVCAS::EmmErrorInfo EmmErrorInfo;
-	typedef TVCAS::CasDeviceInfo CasDeviceInfo;
-	typedef TVCAS::CasCardInfo CasCardInfo;
+	enum
+	{
+		MAX_DEVICE_NAME = 64,
+		MAX_DEVICE_TEXT = 64
+	};
+
+	struct CasModuleInfo
+	{
+		DWORD LibVersion;
+		DWORD Flags;
+		LPCWSTR Name;
+		LPCWSTR Version;
+	};
+
+	struct CasDeviceInfo
+	{
+		DWORD DeviceID;
+		DWORD Flags;
+		WCHAR Name[MAX_DEVICE_NAME];
+		WCHAR Text[MAX_DEVICE_TEXT];
+	};
+
+	struct CasCardInfo
+	{
+		WORD CASystemID;
+		BYTE CardID[6];
+		BYTE CardType;
+		BYTE MessagePartitionLength;
+		BYTE SystemKey[32];
+		BYTE InitialCBC[8];
+		BYTE CardManufacturerID;
+		BYTE CardVersion;
+		WORD CheckCode;
+		WCHAR CardIDText[32];
+	};
+
+	struct EcmErrorInfo
+	{
+		LPCWSTR pszText;
+		WORD EcmPID;
+	};
+
+	struct EmmErrorInfo
+	{
+		LPCWSTR pszText;
+	};
 
 	enum ContractStatus {
 		CONTRACT_CONTRACTED,
@@ -93,23 +135,6 @@ public:
 	bool DescrambleBenchmarkTest(int Instruction, DWORD Round, DWORD *pTime);
 
 protected:
-// TVCAS::IBase
-	TVCAS_DECLARE_BASE
-	LPCWSTR GetName() const override;
-
-// TVCAS::ICasClient
-	LRESULT OnEvent(UINT Event, void *pParam) override;
-	LRESULT OnError(const TVCAS::ErrorInfo *pInfo) override;
-	void OutLog(TVCAS::LogType Type, LPCWSTR pszMessage) override;
-
-	HMODULE m_hCasLib;
-	TVCAS::ICasManager *m_pCasManager;
-	CasModuleInfo m_CasModuleInfo;
-
-	bool m_bEnableDescramble;
-	bool m_bEnableContract;
-	int m_Instruction;
-
 	ULONGLONG m_InputPacketCount;
 	ULONGLONG m_ScramblePacketCount;
 };

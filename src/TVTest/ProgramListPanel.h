@@ -87,7 +87,6 @@ private:
 		bool HitTest(int x,int y,LPARAM *pParam);
 		bool GetEventInfo(LPARAM Param,const CEventInfoData **ppInfo);
 	};
-	friend CEventInfoPopupHandler;
 	CEventInfoPopupHandler m_EventInfoPopupHandler;
 	bool m_fShowRetrievingMessage;
 

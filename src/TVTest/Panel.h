@@ -126,6 +126,7 @@ public:
 	CPanel m_Panel;
 	bool m_fFloating;
 	int m_DockingWidth;
+	bool m_fKeepWidth;
 	int m_Opacity;
 	CDropHelper m_DropHelper;
 	enum DockingPlace {

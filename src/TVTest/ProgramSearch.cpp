@@ -191,6 +191,7 @@ CEventSearchSettings::CEventSearchSettings()
 
 void CEventSearchSettings::Clear()
 {
+	fDisabled=false;
 	Name.clear();
 	Keyword.clear();
 	fRegExp=false;
@@ -231,6 +232,8 @@ bool CEventSearchSettings::ToString(TVTest::String *pString) const
 	*pString+=Buffer;
 
 	unsigned int Flags=0;
+	if (fDisabled)
+		Flags|=FLAG_DISABLED;
 	if (fRegExp)
 		Flags|=FLAG_REG_EXP;
 	if (fIgnoreCase)
@@ -250,7 +253,7 @@ bool CEventSearchSettings::ToString(TVTest::String *pString) const
 	if (fVideo)
 		Flags|=FLAG_VIDEO;
 	if (fServiceList)
-		Flags|=FLAG_VIDEO;
+		Flags|=FLAG_SERVICE_LIST;
 
 	bool fGenre2=false;
 	for (int i=0;i<16;i++) {
@@ -311,6 +314,7 @@ bool CEventSearchSettings::FromString(LPCTSTR pszString)
 		case 2:
 			{
 				unsigned int Flags=std::wcstoul(Value[i].c_str(),nullptr,0);
+				fDisabled=(Flags&FLAG_DISABLED)!=0;
 				fRegExp=(Flags&FLAG_REG_EXP)!=0;
 				fIgnoreCase=(Flags&FLAG_IGNORE_CASE)!=0;
 				fIgnoreWidth=(Flags&FLAG_IGNORE_WIDTH)!=0;
@@ -421,6 +425,17 @@ size_t CEventSearchSettingsList::GetCount() const
 }
 
 
+size_t CEventSearchSettingsList::GetEnabledCount() const
+{
+	size_t Count=0;
+	for (auto it=m_List.begin();it!=m_List.end();++it) {
+		if (!(*it)->fDisabled)
+			Count++;
+	}
+	return Count;
+}
+
+
 CEventSearchSettings *CEventSearchSettingsList::Get(size_t Index)
 {
 	if (Index>=m_List.size())
@@ -528,6 +543,12 @@ bool CEventSearchSettingsList::Save(CSettings &Settings,LPCTSTR pszPrefix) const
 
 
 
+CEventSearcher::CEventSearcher()
+	: m_pFindNLSString(GET_MODULE_FUNCTION(TEXT("kernel32.dll"),FindNLSString))
+{
+}
+
+
 bool CEventSearcher::InitializeRegExp()
 {
 	return m_RegExp.Initialize();
@@ -552,7 +573,8 @@ bool CEventSearcher::BeginSearch(const CEventSearchSettings &Settings)
 			Flags|=TVTest::CRegExp::FLAG_IGNORE_CASE;
 		if (Settings.fIgnoreWidth)
 			Flags|=TVTest::CRegExp::FLAG_IGNORE_WIDTH;
-		m_RegExp.SetPattern(Settings.Keyword.c_str(),Flags);
+		if (!m_RegExp.SetPattern(Settings.Keyword.c_str(),Flags))
+			return false;
 	}
 
 	return true;
@@ -655,32 +677,42 @@ bool CEventSearcher::Match(const CEventInfoData *pEventInfo)
 }
 
 
-bool CEventSearcher::CompareKeyword(LPCTSTR pszText,LPCTSTR pKeyword,int KeywordLength) const
+int CEventSearcher::FindKeyword(LPCTSTR pszText,LPCTSTR pKeyword,int KeywordLength,int *pFoundLength) const
 {
+	if (IsStringEmpty(pszText))
+		return -1;
+
 	UINT Flags=0;
 	if (m_Settings.fIgnoreCase)
 		Flags|=NORM_IGNORECASE;
 	if (m_Settings.fIgnoreWidth)
 		Flags|=NORM_IGNOREWIDTH;
 
-	return ::CompareString(LOCALE_USER_DEFAULT,Flags,
-						   pszText,KeywordLength,pKeyword,KeywordLength)==CSTR_EQUAL;
-}
+	int Pos;
 
+	if (m_pFindNLSString!=NULL) {
+		// Vistaà»ç~
+		Pos=m_pFindNLSString(LOCALE_USER_DEFAULT,FIND_FROMSTART | Flags,
+							 pszText,-1,pKeyword,KeywordLength,pFoundLength);
+	} else {
+		const int StringLength=::lstrlen(pszText);
 
-bool CEventSearcher::FindKeyword(LPCTSTR pszString,LPCTSTR pKeyword,int KeywordLength) const
-{
-	const int StringLength=::lstrlen(pszString);
+		if (StringLength<KeywordLength)
+			return -1;
 
-	if (StringLength<KeywordLength)
-		return false;
-
-	for (int i=0;i<=StringLength-KeywordLength;i++) {
-		if (CompareKeyword(&pszString[i],pKeyword,KeywordLength))
-			return true;
+		Pos=-1;
+		for (int i=0;i<=StringLength-KeywordLength;i++) {
+			if (::CompareString(LOCALE_USER_DEFAULT,Flags,
+					pszText+i,KeywordLength,pKeyword,KeywordLength)==CSTR_EQUAL) {
+				Pos=i;
+				if (pFoundLength!=NULL)
+					*pFoundLength=KeywordLength;
+				break;
+			}
+		}
 	}
 
-	return false;
+	return Pos;
 }
 
 
@@ -725,12 +757,9 @@ bool CEventSearcher::MatchKeyword(const CEventInfoData *pEventInfo,LPCTSTR pszKe
 			fOr=false;
 		}
 		if (i>0) {
-			if ((!IsStringEmpty(pEventInfo->GetEventName())
-					&& FindKeyword(pEventInfo->GetEventName(),szWord,i))
-				|| (!IsStringEmpty(pEventInfo->GetEventText())
-					&& FindKeyword(pEventInfo->GetEventText(),szWord,i))
-				|| (!IsStringEmpty(pEventInfo->GetEventExtText())
-					&& FindKeyword(pEventInfo->GetEventExtText(),szWord,i))) {
+			if (FindKeyword(pEventInfo->GetEventName(),szWord,i)>=0
+					|| FindKeyword(pEventInfo->GetEventText(),szWord,i)>=0
+					|| FindKeyword(pEventInfo->GetEventExtText(),szWord,i)>=0) {
 				if (fMinus)
 					return false;
 				fMatch=true;
@@ -1212,9 +1241,11 @@ INT_PTR CEventSearchSettingsDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LP
 			for (int i=0;(pszKeyword=m_Options.GetKeywordHistory(i))!=NULL;i++)
 				DlgComboBox_AddString(hDlg,IDC_EVENTSEARCH_KEYWORD,pszKeyword);
 
-			HWND hwndEdit=::GetTopWindow(::GetDlgItem(hDlg,IDC_EVENTSEARCH_KEYWORD));
-			m_pOldEditProc=SubclassWindow(hwndEdit,EditProc);
-			::SetProp(hwndEdit,m_pszPropName,m_pOldEditProc);
+			COMBOBOXINFO cbi;
+			cbi.cbSize=sizeof(cbi);
+			::GetComboBoxInfo(::GetDlgItem(hDlg,IDC_EVENTSEARCH_KEYWORD),&cbi);
+			m_pOldEditProc=SubclassWindow(cbi.hwndItem,EditProc);
+			::SetProp(cbi.hwndItem,m_pszPropName,m_pOldEditProc);
 		}
 
 		// ÉWÉÉÉìÉã
@@ -1583,6 +1614,11 @@ LRESULT CALLBACK CEventSearchSettingsDialog::EditProc(HWND hwnd,UINT uMsg,WPARAM
 		return ::DefWindowProc(hwnd,uMsg,wParam,lParam);
 
 	switch (uMsg) {
+	case WM_GETDLGCODE:
+		if (wParam==VK_RETURN)
+			return DLGC_WANTALLKEYS;
+		break;
+
 	case WM_KEYDOWN:
 		if (wParam==VK_RETURN) {
 			::SendMessage(::GetParent(::GetParent(hwnd)),WM_COMMAND,IDC_EVENTSEARCH_SEARCH,0);
@@ -1763,6 +1799,9 @@ INT_PTR CProgramSearchDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
 		case IDOK:
+			OnSearch();
+			return TRUE;
+
 		case IDCANCEL:
 			if (m_pEventHandler==NULL || m_pEventHandler->OnClose())
 				::DestroyWindow(hDlg);
@@ -1783,6 +1822,7 @@ INT_PTR CProgramSearchDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 	case WM_NOTIFY:
 		switch (((LPNMHDR)lParam)->code) {
 		case NM_RCLICK:
+		case NM_DBLCLK:
 			{
 				LPNMITEMACTIVATE pnmia=reinterpret_cast<LPNMITEMACTIVATE>(lParam);
 
@@ -1797,7 +1837,10 @@ INT_PTR CProgramSearchDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 					if (ListView_GetItem(pnmia->hdr.hwndFrom,&lvi)) {
 						const CSearchEventInfo *pEventInfo=
 							reinterpret_cast<const CSearchEventInfo*>(lvi.lParam);
-						m_pEventHandler->OnRButtonClick(pEventInfo,pEventInfo->m_Param);
+						if (pnmia->hdr.code==NM_DBLCLK)
+							m_pEventHandler->OnLDoubleClick(pEventInfo,pEventInfo->m_Param);
+						else
+							m_pEventHandler->OnRButtonClick(pEventInfo,pEventInfo->m_Param);
 						return TRUE;
 					}
 				}
@@ -2162,21 +2205,11 @@ void CProgramSearchDialog::HighlightKeyword()
 
 bool CProgramSearchDialog::SearchNextKeyword(LPCTSTR *ppszText,LPCTSTR pKeyword,int KeywordLength,int *pLength) const
 {
-	LPCTSTR p=*ppszText;
-	const int StringLength=::lstrlen(p);
-
-	if (StringLength<KeywordLength)
+	int Pos=m_Searcher.FindKeyword(*ppszText,pKeyword,KeywordLength,pLength);
+	if (Pos<0)
 		return false;
-
-	for (int i=0;i<=StringLength-KeywordLength;i++) {
-		if (m_Searcher.CompareKeyword(&p[i],pKeyword,KeywordLength)) {
-			*ppszText=p+i;
-			*pLength=KeywordLength;
-			return true;
-		}
-	}
-
-	return false;
+	*ppszText+=Pos;
+	return true;
 }
 
 
@@ -2201,7 +2234,8 @@ void CProgramSearchDialog::OnSearch()
 	}
 
 	m_SearchSettings=Settings;
-	m_Searcher.BeginSearch(m_SearchSettings);
+	if (!m_Searcher.BeginSearch(m_SearchSettings))
+		return;
 
 	HCURSOR hcurOld=::SetCursor(::LoadCursor(NULL,IDC_WAIT));
 	DWORD StartTime=::GetTickCount();

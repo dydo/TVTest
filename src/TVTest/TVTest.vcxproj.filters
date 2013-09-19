@@ -137,9 +137,6 @@
     <ClCompile Include="DtvEngine\DtvEngine.cpp">
       <Filter>DtvEngine\Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="DirectShowFilter\AacDecFilter.cpp">
-      <Filter>DirectShowFilter\Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="DirectShowFilter\AacDecoder.cpp">
       <Filter>DirectShowFilter\Source Files</Filter>
     </ClCompile>
@@ -156,9 +153,6 @@
       <Filter>DirectShowFilter\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DirectShowFilter\ImageMixer.cpp">
-      <Filter>DirectShowFilter\Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="DirectShowFilter\Mpeg2SequenceFilter.cpp">
       <Filter>DirectShowFilter\Source Files</Filter>
     </ClCompile>
     <ClCompile Include="DirectShowFilter\TsSrcStream.cpp">
@@ -467,6 +461,18 @@
     <ClCompile Include="FeaturedEvents.cpp">
       <Filter>ソース ファイル</Filter>
     </ClCompile>
+    <ClCompile Include="DirectShowFilter\AudioDecoder.cpp">
+      <Filter>DirectShowFilter\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectShowFilter\AudioDecFilter.cpp">
+      <Filter>DirectShowFilter\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectShowFilter\Mpeg2ParserFilter.cpp">
+      <Filter>DirectShowFilter\Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="DirectShowFilter\VideoParser.cpp">
+      <Filter>DirectShowFilter\Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BonTsEngine\Bitstream.h">
@@ -559,9 +565,6 @@
     <ClInclude Include="DtvEngine\DtvEngine.h">
       <Filter>DtvEngine\Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DirectShowFilter\AacDecFilter.h">
-      <Filter>DirectShowFilter\Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="DirectShowFilter\AacDecoder.h">
       <Filter>DirectShowFilter\Header Files</Filter>
     </ClInclude>
@@ -580,13 +583,7 @@
     <ClInclude Include="DirectShowFilter\ImageMixer.h">
       <Filter>DirectShowFilter\Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="DirectShowFilter\Mpeg2SequenceFilter.h">
-      <Filter>DirectShowFilter\Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="DirectShowFilter\TsSrcStream.h">
-      <Filter>DirectShowFilter\Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="DirectShowFilter\VideoInfo.h">
       <Filter>DirectShowFilter\Header Files</Filter>
     </ClInclude>
     <ClInclude Include="DirectShowFilter\VideoRenderer.h">
@@ -909,6 +906,21 @@
     </ClInclude>
     <ClInclude Include="FeaturedEvents.h">
       <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectShowFilter\AudioDecoder.h">
+      <Filter>DirectShowFilter\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectShowFilter\AudioDecFilter.h">
+      <Filter>DirectShowFilter\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Common.h">
+      <Filter>ヘッダー ファイル</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectShowFilter\Mpeg2ParserFilter.h">
+      <Filter>DirectShowFilter\Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="DirectShowFilter\VideoParser.h">
+      <Filter>DirectShowFilter\Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -10,10 +10,10 @@
 
 #define VERSION_MAJOR		0
 #define VERSION_MINOR		8
-#define VERSION_BUILD		0
+#define VERSION_BUILD		1
 #define VERSION_REVISION	0
 
-#define VERSION_TEXT_A	"0.8.0"
+#define VERSION_TEXT_A	"0.8.1"
 
 #ifdef TVH264
 // ÉèÉìÉZÉOå¸ÇØ
@@ -75,9 +75,10 @@
 #define ABSTRACT_CLASS(name)	ABSTRACT_DECL name abstract
 
 #ifndef TVH264
-#define CHANNEL_FILE_EXTENSION	TEXT(".ch2")
+#define CHANNEL_FILE_EXTENSION			TEXT(".ch2")
 #else
-#define CHANNEL_FILE_EXTENSION	TEXT(".ch1")
+#define CHANNEL_FILE_EXTENSION			TEXT(".ch1")
+#define DEFERRED_CHANNEL_FILE_EXTENSION	TEXT(".ch2")
 #endif
 
 

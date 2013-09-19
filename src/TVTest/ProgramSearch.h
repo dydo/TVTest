@@ -82,6 +82,7 @@ public:
 		VIDEO_SD
 	};
 
+	bool fDisabled;
 	TVTest::String Name;
 	TVTest::String Keyword;
 	bool fRegExp;
@@ -121,7 +122,8 @@ private:
 		FLAG_DURATION     = 0x00000040U,
 		FLAG_CA           = 0x00000080U,
 		FLAG_VIDEO        = 0x00000100U,
-		FLAG_SERVICE_LIST = 0x00000200U
+		FLAG_SERVICE_LIST = 0x00000200U,
+		FLAG_DISABLED     = 0x00000400U
 	};
 
 	static void ParseTime(LPCWSTR pszString,TimeInfo *pTime);
@@ -134,6 +136,7 @@ public:
 	~CEventSearchSettingsList();
 	void Clear();
 	size_t GetCount() const;
+	size_t GetEnabledCount() const;
 	CEventSearchSettings *Get(size_t Index);
 	const CEventSearchSettings *Get(size_t Index) const;
 	CEventSearchSettings *GetByName(LPCTSTR pszName);
@@ -151,19 +154,20 @@ private:
 class CEventSearcher
 {
 public:
+	CEventSearcher();
 	bool InitializeRegExp();
 	void Finalize();
 	bool BeginSearch(const CEventSearchSettings &Settings);
 	bool Match(const CEventInfoData *pEventInfo);
-	bool CompareKeyword(LPCTSTR pszText,LPCTSTR pKeyword,int KeywordLength) const;
+	int FindKeyword(LPCTSTR pszText,LPCTSTR pKeyword,int KeywordLength,int *pFoundLength=NULL) const;
 	const CEventSearchSettings &GetSearchSettings() const { return m_Settings; }
 	TVTest::CRegExp &GetRegExp() { return m_RegExp; }
 
 private:
 	CEventSearchSettings m_Settings;
 	TVTest::CRegExp m_RegExp;
+	decltype(FindNLSString) *m_pFindNLSString;
 
-	bool FindKeyword(LPCTSTR pszString,LPCTSTR pKeyword,int KeywordLength) const;
 	bool MatchKeyword(const CEventInfoData *pEventInfo,LPCTSTR pszKeyword) const;
 	bool MatchRegExp(const CEventInfoData *pEventInfo);
 };
@@ -264,6 +268,7 @@ public:
 		virtual bool OnSearch() = 0;
 		virtual void OnEndSearch() {}
 		virtual bool OnClose() { return true; }
+		virtual bool OnLDoubleClick(const CEventInfoData *pEventInfo,LPARAM Param) { return false; }
 		virtual bool OnRButtonClick(const CEventInfoData *pEventInfo,LPARAM Param) { return false; }
 		virtual void OnHighlightChange(bool fHighlight) {}
 		friend class CProgramSearchDialog;
@@ -275,7 +280,6 @@ public:
 		bool AddSearchResult(const CEventInfoData *pEventInfo,LPCTSTR pszChannelName,LPARAM Param=0);
 		bool Match(const CEventInfoData *pEventInfo) const;
 	};
-	friend class CEventHandler;
 
 	CProgramSearchDialog(CEventSearchOptions &Options);
 	~CProgramSearchDialog();

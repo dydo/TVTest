@@ -107,6 +107,7 @@ bool CDirectShowFilterFinder::FindFilter(const GUID *pInTypes,int InTypeCount,
 					}
 					pPropBag->Release();
 				}
+				pMoniker->Release();
 			}
 			pEnum->Release();
 		}

@@ -21,14 +21,15 @@ CProgramGuideOptions::CProgramGuideOptions(CProgramGuide *pProgramGuide,CPluginM
 	: m_pProgramGuide(pProgramGuide)
 	, m_pPluginManager(pPluginManager)
 	, m_fOnScreen(false)
+	, m_fScrollToCurChannel(false)
 	, m_BeginHour(-1)
 	, m_ViewHours(26)
 	, m_ItemWidth(pProgramGuide->GetItemWidth())
 	, m_LinesPerHour(pProgramGuide->GetLinesPerHour())
 	, m_LineMargin(1)
-	, m_WheelScrollLines(pProgramGuide->GetWheelScrollLines())
 	, m_VisibleEventIcons(m_pProgramGuide->GetVisibleEventIcons())
 	, m_himlEventIcons(NULL)
+	, m_WheelScrollLines(pProgramGuide->GetWheelScrollLines())
 {
 	m_pProgramGuide->GetFont(&m_Font);
 }
@@ -60,6 +61,7 @@ bool CProgramGuideOptions::LoadSettings(CSettings &Settings)
 		bool f;
 
 		Settings.Read(TEXT("OnScreen"),&m_fOnScreen);
+		Settings.Read(TEXT("ScrollToCurChannel"),&m_fScrollToCurChannel);
 		if (Settings.Read(TEXT("BeginHour"),&Value)
 				&& Value>=-1 && Value<=23)
 			m_BeginHour=Value;
@@ -79,6 +81,9 @@ bool CProgramGuideOptions::LoadSettings(CSettings &Settings)
 			m_LineMargin=max(Value,0);
 		m_pProgramGuide->SetUIOptions(m_LinesPerHour,m_ItemWidth,m_LineMargin);
 
+		Settings.Read(TEXT("EventIcons"),&m_VisibleEventIcons);
+		m_pProgramGuide->SetVisibleEventIcons(m_VisibleEventIcons);
+
 		if (Settings.Read(TEXT("WheelScrollLines"),&Value))
 			m_WheelScrollLines=Value;
 		m_pProgramGuide->SetWheelScrollLines(m_WheelScrollLines);
@@ -90,9 +95,6 @@ bool CProgramGuideOptions::LoadSettings(CSettings &Settings)
 			else
 				m_ProgramLDoubleClickCommand.Clear();
 		}
-
-		Settings.Read(TEXT("EventIcons"),&m_VisibleEventIcons);
-		m_pProgramGuide->SetVisibleEventIcons(m_VisibleEventIcons);
 
 		if (Settings.Read(TEXT("ShowToolTip"),&f))
 			m_pProgramGuide->SetShowToolTip(f);
@@ -128,6 +130,10 @@ bool CProgramGuideOptions::LoadSettings(CSettings &Settings)
 		unsigned int Filter;
 		if (Settings.Read(TEXT("Filter"),&Filter))
 			m_pProgramGuide->SetFilter(Filter);
+
+		bool fKeepTimePos;
+		if (Settings.Read(TEXT("KeepTimePos"),&fKeepTimePos))
+			m_pProgramGuide->SetKeepTimePos(fKeepTimePos);
 
 		bool fExcludeNoEvent;
 		if (Settings.Read(TEXT("ExcludeNoEventServices"),&fExcludeNoEvent))
@@ -297,14 +303,15 @@ bool CProgramGuideOptions::SaveSettings(CSettings &Settings)
 
 	if (Settings.SetSection(TEXT("ProgramGuide"))) {
 		Settings.Write(TEXT("OnScreen"),m_fOnScreen);
+		Settings.Write(TEXT("ScrollToCurChannel"),m_fScrollToCurChannel);
 		Settings.Write(TEXT("BeginHour"),m_BeginHour);
 		Settings.Write(TEXT("ViewHours"),m_ViewHours);
 		Settings.Write(TEXT("ItemWidth"),m_ItemWidth);
 		Settings.Write(TEXT("LinesPerHour"),m_LinesPerHour);
 		Settings.Write(TEXT("LineMargin"),m_LineMargin);
-		Settings.Write(TEXT("WheelScrollLines"),m_WheelScrollLines);
-		Settings.Write(TEXT("ProgramLDoubleClick"),m_ProgramLDoubleClickCommand.Get());
 		Settings.Write(TEXT("EventIcons"),m_VisibleEventIcons);
+		Settings.Write(TEXT("WheelScrollLines"),m_WheelScrollLines);
+		Settings.Write(TEXT("ProgramLDoubleClick"),m_ProgramLDoubleClickCommand.GetSafe());
 
 		// Font
 		Settings.Write(TEXT("FontName"),m_Font.lfFaceName);
@@ -315,6 +322,7 @@ bool CProgramGuideOptions::SaveSettings(CSettings &Settings)
 		Settings.Write(TEXT("DragScroll"),m_pProgramGuide->GetDragScroll());
 		Settings.Write(TEXT("ShowToolTip"),m_pProgramGuide->GetShowToolTip());
 		Settings.Write(TEXT("Filter"),m_pProgramGuide->GetFilter());
+		Settings.Write(TEXT("KeepTimePos"),m_pProgramGuide->GetKeepTimePos());
 		Settings.Write(TEXT("ExcludeNoEventServices"),m_pProgramGuide->GetExcludeNoEventServices());
 
 		int Width,Height;
@@ -468,6 +476,7 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 	case WM_INITDIALOG:
 		{
 			DlgCheckBox_Check(hDlg,IDC_PROGRAMGUIDEOPTIONS_ONSCREEN,m_fOnScreen);
+			DlgCheckBox_Check(hDlg,IDC_PROGRAMGUIDEOPTIONS_SCROLLTOCURCHANNEL,m_fScrollToCurChannel);
 			DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_BEGINHOUR,TEXT("現在時"));
 			for (int i=0;i<=23;i++) {
 				TCHAR szText[8];
@@ -475,51 +484,16 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 				DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_BEGINHOUR,szText);
 			}
 			DlgComboBox_SetCurSel(hDlg,IDC_PROGRAMGUIDEOPTIONS_BEGINHOUR,m_BeginHour+1);
-			::SetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_VIEWHOURS,m_ViewHours,TRUE);
-			::SendDlgItemMessage(hDlg,IDC_PROGRAMGUIDEOPTIONS_VIEWHOURS_UD,
-								 UDM_SETRANGE32,MIN_VIEW_HOURS,MAX_VIEW_HOURS);
-			::SetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_CHANNELWIDTH,m_ItemWidth,TRUE);
-			::SendDlgItemMessage(hDlg,IDC_PROGRAMGUIDEOPTIONS_CHANNELWIDTH_UD,
-				UDM_SETRANGE32,CProgramGuide::MIN_ITEM_WIDTH,CProgramGuide::MAX_ITEM_WIDTH);
-			::SetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINESPERHOUR,m_LinesPerHour,TRUE);
-			::SendDlgItemMessage(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINESPERHOUR_UD,
-				UDM_SETRANGE32,CProgramGuide::MIN_LINES_PER_HOUR,CProgramGuide::MAX_LINES_PER_HOUR);
-			::SetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINEMARGIN,m_LineMargin,TRUE);
-			::SendDlgItemMessage(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINEMARGIN_UD,UDM_SETRANGE32,0,100);
-			::SetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_WHEELSCROLLLINES,m_WheelScrollLines,TRUE);
-			::SendDlgItemMessage(hDlg,IDC_PROGRAMGUIDEOPTIONS_WHEELSCROLLLINES_UD,
-				UDM_SETRANGE,0,MAKELONG(UD_MAXVAL,UD_MINVAL));
-
-			int Sel=m_ProgramLDoubleClickCommand.IsEmpty()?0:-1;
-			DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,TEXT("何もしない"));
-			DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,TEXT("iEPG関連付け実行"));
-			if (Sel<0 && m_ProgramLDoubleClickCommand.Compare(IEPG_ASSOCIATE_COMMAND)==0)
-				Sel=1;
-			for (int i=0;i<m_pPluginManager->NumPlugins();i++) {
-				const CPlugin *pPlugin=m_pPluginManager->GetPlugin(i);
-
-				for (int j=0;j<pPlugin->NumProgramGuideCommands();j++) {
-					TVTest::ProgramGuideCommandInfo CommandInfo;
-
-					pPlugin->GetProgramGuideCommandInfo(j,&CommandInfo);
-					if (CommandInfo.Type==TVTest::PROGRAMGUIDE_COMMAND_TYPE_PROGRAM) {
-						TCHAR szCommand[512];
-
-						::wsprintf(szCommand,TEXT("%s:%s"),
-								   ::PathFindFileName(pPlugin->GetFileName()),
-								   CommandInfo.pszText);
-						LRESULT Index=DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,
-															CommandInfo.pszName);
-						DlgComboBox_SetItemData(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,
-												Index,reinterpret_cast<LPARAM>(DuplicateString(szCommand)));
-						if (Sel<0 && !m_ProgramLDoubleClickCommand.IsEmpty()
-								&& ::lstrcmpi(szCommand,m_ProgramLDoubleClickCommand.Get())==0)
-							Sel=(int)Index;
-					}
-				}
-			}
-			if (Sel>=0)
-				DlgComboBox_SetCurSel(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,Sel);
+			DlgEdit_SetInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_VIEWHOURS,m_ViewHours);
+			DlgUpDown_SetRange(hDlg,IDC_PROGRAMGUIDEOPTIONS_VIEWHOURS_UD,MIN_VIEW_HOURS,MAX_VIEW_HOURS);
+			DlgEdit_SetInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_CHANNELWIDTH,m_ItemWidth);
+			DlgUpDown_SetRange(hDlg,IDC_PROGRAMGUIDEOPTIONS_CHANNELWIDTH_UD,
+				CProgramGuide::MIN_ITEM_WIDTH,CProgramGuide::MAX_ITEM_WIDTH);
+			DlgEdit_SetInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINESPERHOUR,m_LinesPerHour);
+			DlgUpDown_SetRange(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINESPERHOUR_UD,
+				CProgramGuide::MIN_LINES_PER_HOUR,CProgramGuide::MAX_LINES_PER_HOUR);
+			DlgEdit_SetInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINEMARGIN,m_LineMargin);
+			DlgUpDown_SetRange(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINEMARGIN_UD,0,100);
 
 			m_CurSettingFont=m_Font;
 			SetFontInfo(hDlg,&m_CurSettingFont);
@@ -553,6 +527,40 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 			}
 			::DeleteDC(hdcMem);
 			::ReleaseDC(hDlg,hdc);
+
+			DlgEdit_SetInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_WHEELSCROLLLINES,m_WheelScrollLines);
+			DlgUpDown_SetRange(hDlg,IDC_PROGRAMGUIDEOPTIONS_WHEELSCROLLLINES_UD,0,100);
+
+			int Sel=m_ProgramLDoubleClickCommand.IsEmpty()?0:-1;
+			DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,TEXT("何もしない"));
+			DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,TEXT("iEPG関連付け実行"));
+			if (Sel<0 && m_ProgramLDoubleClickCommand.Compare(IEPG_ASSOCIATE_COMMAND)==0)
+				Sel=1;
+			for (int i=0;i<m_pPluginManager->NumPlugins();i++) {
+				const CPlugin *pPlugin=m_pPluginManager->GetPlugin(i);
+
+				for (int j=0;j<pPlugin->NumProgramGuideCommands();j++) {
+					TVTest::ProgramGuideCommandInfo CommandInfo;
+
+					pPlugin->GetProgramGuideCommandInfo(j,&CommandInfo);
+					if (CommandInfo.Type==TVTest::PROGRAMGUIDE_COMMAND_TYPE_PROGRAM) {
+						TCHAR szCommand[512];
+
+						StdUtil::snprintf(szCommand,lengthof(szCommand),TEXT("%s:%s"),
+										  ::PathFindFileName(pPlugin->GetFileName()),
+										  CommandInfo.pszText);
+						LRESULT Index=DlgComboBox_AddString(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,
+															CommandInfo.pszName);
+						DlgComboBox_SetItemData(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,
+												Index,reinterpret_cast<LPARAM>(DuplicateString(szCommand)));
+						if (Sel<0 && !m_ProgramLDoubleClickCommand.IsEmpty()
+								&& ::lstrcmpi(szCommand,m_ProgramLDoubleClickCommand.Get())==0)
+							Sel=(int)Index;
+					}
+				}
+			}
+			if (Sel>=0)
+				DlgComboBox_SetCurSel(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,Sel);
 
 			CProgramGuideToolList *pToolList=m_pProgramGuide->GetToolList();
 			HWND hwndList=GetDlgItem(hDlg,IDC_PROGRAMGUIDETOOL_LIST);
@@ -794,7 +802,10 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 				int Value;
 				bool fUpdate=false;
 
-				m_fOnScreen=DlgCheckBox_IsChecked(hDlg,IDC_PROGRAMGUIDEOPTIONS_ONSCREEN);
+				m_fOnScreen=
+					DlgCheckBox_IsChecked(hDlg,IDC_PROGRAMGUIDEOPTIONS_ONSCREEN);
+				m_fScrollToCurChannel=
+					DlgCheckBox_IsChecked(hDlg,IDC_PROGRAMGUIDEOPTIONS_SCROLLTOCURCHANNEL);
 				Value=(int)DlgComboBox_GetCurSel(hDlg,IDC_PROGRAMGUIDEOPTIONS_BEGINHOUR)-1;
 				if (m_BeginHour!=Value) {
 					m_BeginHour=Value;
@@ -824,22 +835,6 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 				m_LineMargin=::GetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_LINEMARGIN,NULL,TRUE);
 				m_pProgramGuide->SetUIOptions(m_LinesPerHour,m_ItemWidth,m_LineMargin);
 
-				m_WheelScrollLines=::GetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_WHEELSCROLLLINES,NULL,TRUE);
-				m_pProgramGuide->SetWheelScrollLines(m_WheelScrollLines);
-
-				LRESULT Sel=DlgComboBox_GetCurSel(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK);
-				if (Sel>=0) {
-					if (Sel==0) {
-						m_ProgramLDoubleClickCommand.Clear();
-					} else if (Sel==1) {
-						m_ProgramLDoubleClickCommand.Set(IEPG_ASSOCIATE_COMMAND);
-					} else {
-						m_ProgramLDoubleClickCommand.Set(
-							reinterpret_cast<LPCTSTR>(
-								DlgComboBox_GetItemData(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,Sel)));
-					}
-				}
-
 				if (!CompareLogFont(&m_Font,&m_CurSettingFont)) {
 					m_Font=m_CurSettingFont;
 					m_pProgramGuide->SetFont(&m_Font);
@@ -854,6 +849,22 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 					m_VisibleEventIcons=VisibleEventIcons;
 					m_pProgramGuide->SetVisibleEventIcons(VisibleEventIcons);
 					m_UpdateFlags|=UPDATE_EVENTICONS;
+				}
+
+				m_WheelScrollLines=::GetDlgItemInt(hDlg,IDC_PROGRAMGUIDEOPTIONS_WHEELSCROLLLINES,NULL,TRUE);
+				m_pProgramGuide->SetWheelScrollLines(m_WheelScrollLines);
+
+				LRESULT Sel=DlgComboBox_GetCurSel(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK);
+				if (Sel>=0) {
+					if (Sel==0) {
+						m_ProgramLDoubleClickCommand.Clear();
+					} else if (Sel==1) {
+						m_ProgramLDoubleClickCommand.Set(IEPG_ASSOCIATE_COMMAND);
+					} else {
+						m_ProgramLDoubleClickCommand.Set(
+							reinterpret_cast<LPCTSTR>(
+								DlgComboBox_GetItemData(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,Sel)));
+					}
 				}
 
 				CProgramGuideToolList *pToolList=m_pProgramGuide->GetToolList();
@@ -890,6 +901,7 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 				delete [] reinterpret_cast<LPTSTR>(
 					DlgComboBox_GetItemData(hDlg,IDC_PROGRAMGUIDEOPTIONS_PROGRAMLDOUBLECLICK,i));
 			}
+
 			for (int i=0;i<=CEpgIcons::ICON_LAST;i++) {
 				/*
 				HICON hico=reinterpret_cast<HICON>(
@@ -906,10 +918,12 @@ INT_PTR CProgramGuideOptions::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM l
 				if (hbm!=NULL)
 					::DeleteObject(hbm);
 			}
+
 			if (m_himlEventIcons!=NULL) {
 				::ImageList_Destroy(m_himlEventIcons);
 				m_himlEventIcons=NULL;
 			}
+
 			m_Tooltip.Destroy();
 		}
 		return TRUE;

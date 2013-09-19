@@ -85,6 +85,12 @@ bool ReplaceString(LPWSTR *ppszString,LPCWSTR pszNewString)
 }
 
 
+static inline bool IsWhitespace(TCHAR c)
+{
+	return c==_T(' ') || c==_T('\r') || c==_T('\n') || c==_T('\t');
+}
+
+
 int RemoveTrailingWhitespace(LPTSTR pszString)
 {
 	if (pszString==NULL)
@@ -92,7 +98,7 @@ int RemoveTrailingWhitespace(LPTSTR pszString)
 	LPTSTR pSpace=NULL;
 	LPTSTR p=pszString;
 	while (*p!=_T('\0')) {
-		if (*p==_T(' ') || *p==_T('\r') || *p==_T('\n') || *p==_T('\t')) {
+		if (IsWhitespace(*p)) {
 			if (pSpace==NULL)
 				pSpace=p;
 		} else if (pSpace!=NULL) {
@@ -104,6 +110,24 @@ int RemoveTrailingWhitespace(LPTSTR pszString)
 		return 0;
 	*pSpace=_T('\0');
 	return (int)(p-pSpace);
+}
+
+
+LPTSTR SkipLeadingWhitespace(LPTSTR pszString)
+{
+	LPTSTR p=pszString;
+	while (IsWhitespace(*p))
+		p++;
+	return p;
+}
+
+
+LPCTSTR SkipLeadingWhitespace(LPCTSTR pszString)
+{
+	LPCTSTR p=pszString;
+	while (IsWhitespace(*p))
+		p++;
+	return p;
 }
 
 
@@ -229,6 +253,16 @@ namespace TVTest
 			}
 
 			return true;
+		}
+
+		void ToUpper(String &Str)
+		{
+			::CharUpperBuff(&Str[0],static_cast<DWORD>(Str.length()));
+		}
+
+		void ToLower(String &Str)
+		{
+			::CharLowerBuff(&Str[0],static_cast<DWORD>(Str.length()));
 		}
 
 		bool ToAnsi(const String &Src,AnsiString *pDst)

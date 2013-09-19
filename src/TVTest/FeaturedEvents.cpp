@@ -110,17 +110,20 @@ bool CFeaturedEvents::Update()
 	const CEventSearchServiceList &DefaultServiceList=m_Settings.GetDefaultServiceList();
 	CEventSearchServiceList ServiceIDList(DefaultServiceList);
 
+	const CEventSearchSettingsList &SearchSettingsList=m_Settings.GetSearchSettingsList();
 	std::vector<CEventSearcher> SearcherList;
-	SearcherList.resize(m_Settings.GetSearchSettingsList().GetCount());
+	SearcherList.resize(SearchSettingsList.GetEnabledCount());
 
-	for (size_t i=0;i<m_Settings.GetSearchSettingsList().GetCount();i++) {
-		const CEventSearchSettings *pSettings=m_Settings.GetSearchSettingsList().Get(i);
+	for (size_t i=0;i<SearchSettingsList.GetCount();i++) {
+		const CEventSearchSettings *pSettings=SearchSettingsList.Get(i);
 
-		if (pSettings->fServiceList) {
-			ServiceIDList.Combine(pSettings->ServiceList);
+		if (!pSettings->fDisabled) {
+			if (pSettings->fServiceList) {
+				ServiceIDList.Combine(pSettings->ServiceList);
+			}
+
+			SearcherList[i].BeginSearch(*pSettings);
 		}
-
-		SearcherList[i].BeginSearch(*pSettings);
 	}
 
 	CEpgProgramList *pEpgProgramList=GetAppClass().GetEpgProgramList();
@@ -512,7 +515,7 @@ INT_PTR CFeaturedEventsDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM 
 			HWND hwndList=::GetDlgItem(hDlg,IDC_FEATUREDEVENTS_SEARCHSETTINGSLIST);
 
 			ListView_SetExtendedListViewStyle(hwndList,
-				LVS_EX_FULLROWSELECT | LVS_EX_LABELTIP);
+				LVS_EX_CHECKBOXES | LVS_EX_FULLROWSELECT | LVS_EX_LABELTIP);
 
 			LVCOLUMN lvc;
 			lvc.mask=LVCF_FMT | LVCF_WIDTH | LVCF_TEXT | LVCF_SUBITEM;
@@ -609,9 +612,10 @@ INT_PTR CFeaturedEventsDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM 
 
 				if (Sel>=0) {
 					LVITEM lvi;
-					lvi.mask=LVIF_PARAM;
+					lvi.mask=LVIF_STATE | LVIF_PARAM;
 					lvi.iItem=Sel;
 					lvi.iSubItem=0;
+					lvi.stateMask=~0U;
 					if (ListView_GetItem(hwndList,&lvi)) {
 						CEventSearchSettings Settings(
 							*reinterpret_cast<CEventSearchSettings*>(lvi.lParam));
@@ -620,8 +624,8 @@ INT_PTR CFeaturedEventsDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM 
 						if (Dialog.Show(hDlg)) {
 							int Item=AddSearchSettingsItem(hDlg,Settings);
 							ListView_SetItemState(hwndList,Item,
-												  LVIS_FOCUSED | LVIS_SELECTED,
-												  LVIS_FOCUSED | LVIS_SELECTED);
+								LVIS_FOCUSED | LVIS_SELECTED | (lvi.state & LVIS_STATEIMAGEMASK),
+								LVIS_FOCUSED | LVIS_SELECTED | LVIS_STATEIMAGEMASK);
 							SetSearchSettingsListItemStatus(hDlg);
 						}
 					}
@@ -647,17 +651,18 @@ INT_PTR CFeaturedEventsDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM 
 				}
 
 				LVITEM lvi;
-				lvi.mask=LVIF_PARAM;
+				lvi.mask=LVIF_STATE | LVIF_PARAM;
 				lvi.iItem=Sel;
 				lvi.iSubItem=0;
+				lvi.stateMask=~0U;
 				ListView_GetItem(hwndList,&lvi);
 				ListView_DeleteItem(hwndList,Sel);
 				lvi.iItem=To;
 				ListView_InsertItem(hwndList,&lvi);
 				UpdateSearchSettingsItem(hDlg,To);
 				ListView_SetItemState(hwndList,To,
-									  LVIS_FOCUSED | LVIS_SELECTED,
-									  LVIS_FOCUSED | LVIS_SELECTED);
+									  LVIS_FOCUSED | LVIS_SELECTED | (lvi.state & LVIS_STATEIMAGEMASK),
+									  LVIS_FOCUSED | LVIS_SELECTED | LVIS_STATEIMAGEMASK);
 				SetSearchSettingsListItemStatus(hDlg);
 			}
 			return TRUE;
@@ -720,7 +725,10 @@ INT_PTR CFeaturedEventsDialog::DlgProc(HWND hDlg,UINT uMsg,WPARAM wParam,LPARAM 
 				for (int i=0;i<ItemCount;i++) {
 					lvi.iItem=i;
 					ListView_GetItem(hwndList,&lvi);
-					SettingsList.Add(*reinterpret_cast<CEventSearchSettings*>(lvi.lParam));
+					CEventSearchSettings *pSettings=
+						reinterpret_cast<CEventSearchSettings*>(lvi.lParam);
+					pSettings->fDisabled=!ListView_GetCheckState(hwndList,i);
+					SettingsList.Add(*pSettings);
 				}
 			}
 
@@ -843,6 +851,7 @@ void CFeaturedEventsDialog::UpdateSearchSettingsItem(HWND hDlg,int Item)
 	const CEventSearchSettings *pSettings=
 		reinterpret_cast<const CEventSearchSettings *>(lvi.lParam);
 
+	ListView_SetCheckState(hwndList,Item,!pSettings->fDisabled);
 	ListView_SetItemText(hwndList,Item,0,const_cast<LPTSTR>(pSettings->Name.c_str()));
 	ListView_SetItemText(hwndList,Item,1,const_cast<LPTSTR>(pSettings->Keyword.c_str()));
 
